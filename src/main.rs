@@ -8,7 +8,7 @@ pub mod id;
 fn main() {
     println!("Hello, world!");
     let expr = mincaml::ExprParser::new()
-        .parse("let (p,q) = f 3 in p + q")
+        .parse("let rec a b = c; let a = b in () in ()")
         .unwrap();
     println!("{:#?}", &expr);
 }

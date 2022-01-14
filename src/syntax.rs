@@ -1,7 +1,23 @@
+/// 文字列中の範囲を示す
+pub type Span = (usize, usize);
+
+/// 型 T に範囲情報が付加されたもの
+#[derive(Debug)]
+pub struct Spanned<T> {
+    pub item: T,
+    pub span: Span
+}
+
+impl<T> Spanned<T> {
+    pub fn new(item: T, span: Span) -> Self {
+        Self {item, span}
+    }
+}
+
 /// min-caml コードの抽象構文木
 /// Expr<Option<Type>> とすることで型推論をしていない木を、Expr<Type> とすることで型が決定した木を表現できる
 #[derive(Debug)]
-pub enum Expr<T> {
+pub enum RawExpr<T> {
     Unit,
     Bool(bool),
     Int(i32),
@@ -25,10 +41,18 @@ pub enum Expr<T> {
     ArrayPut {array: Box<Expr<T>>, index: Box<Expr<T>>, value: Box<Expr<T>>},
 }
 
+pub type Expr<T> = Spanned<RawExpr<T>>;
+
 #[derive(Debug)]
 pub struct TypedVar<T> {
     pub name: String,
     pub t: T
+}
+
+impl<T> TypedVar<T> {
+    pub fn new(name: String, t: T) -> Self {
+        Self {name, t}
+    }
 }
 
 #[derive(Debug)]
@@ -42,6 +66,8 @@ pub enum UnaryOp {
 pub enum BinaryOp {
     Add,
     Sub,
+    Mul,
+    Div,
     FAdd,
     FSub,
     FMul,

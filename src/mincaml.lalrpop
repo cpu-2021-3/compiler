@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use crate::syntax::{Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
 use crate::ty::Type;
 use crate::id::generate_id;
 
@@ -7,59 +7,77 @@ grammar;
 
 // すべての valid な式
 pub Expr: Box<Expr<Option<Type>>> = {
+    // 優先順位がより高い式
     #[precedence(level="0")] 
     MiddleExpr,
     
+    // if 式
     #[precedence(level="1")]
-    "if" <cond: Expr> "then" <exp_then: Expr> "else" <exp_else: Expr> => Box::new(Expr::If{<>}),
+    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <exp_else: Expr> <r:@R> 
+        => Box::new(Spanned::new(RawExpr::If{cond, exp_then, exp_else}, (l,r))),
 
+    // セミコロン (式;式)
     #[precedence(level="2")]
     #[assoc(side = "left")]
-    <exp_var: Expr> ";" <exp_suc: Expr> => {
-        let typed_var = TypedVar::<Option<Type>> {name: generate_id("sm"), t: Some(Type::Unit)};
-        Box::new(Expr::LetIn{var: typed_var, exp_var: exp_var, exp_suc: exp_suc})
+    <l:@L> <exp_var: Expr> ";" <exp_suc: Expr> <r:@R> => {
+        let var = TypedVar::<Option<Type>> {name: generate_id("sm"), t: Some(Type::Unit)};
+        Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 
+    // let ~ in 文
     #[precedence(level="3")]
-    "let" <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
-        let typed_var = TypedVar::<Option<Type>> {name: var_name, t: None};
-        Box::new(Expr::LetIn{var: typed_var, exp_var: exp_var, exp_suc: exp_suc})
+    <l:@L> "let" <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> => {
+        let var = TypedVar::<Option<Type>> {name: var_name, t: None};
+        Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 
-    "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> 
-        => Box::new(Expr::LetRecIn{<>}),
+    // let rec ~ in 文
+    <l:@L> "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> <r:@R> 
+        => Box::new(Spanned::new(RawExpr::LetRecIn{fun_name, args, exp_fun, exp_suc}, (l,r))),
 
-    "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> => Box::new(Expr::LetTupleIn{<>}),
+    // let tuple ~ in 文
+    <l:@L> "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> 
+        => Box::new(Spanned::new(RawExpr::LetTupleIn{vars, exp_var, exp_suc}, (l,r))),
 };
 
 // if 文より大きい優先度の式
 MiddleExpr: Box<Expr<Option<Type>>> = {
+    // 優先順位がより高い式、単項演算子 (not, -, -.)、関数適用、Array.create
     #[precedence(level="0")] 
     BasicExpr,
-    <op: UnaryOp> <exp: MiddleExpr> => Box::new(Expr::UnOp{<>}),
-    <fun: BasicExpr> <args: AppliedArgs> => Box::new(Expr::Apply{<>}),
-    NewArrayRegex <size: BasicExpr> <value: BasicExpr> => Box::new(Expr::NewArray{<>}),
+    <l:@L> <op: UnaryOp> <exp: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::UnOp{op, exp}, (l,r))),
+    <l:@L> <fun: BasicExpr> <args: AppliedArgs> <r:@R> => Box::new(Spanned::new(RawExpr::Apply{fun, args}, (l,r))),
+    <l:@L> NewArrayRegex <size: BasicExpr> <value: BasicExpr> <r:@R> => Box::new(Spanned::new(RawExpr::NewArray{size, value}, (l,r))),
 
+    // 積 (*, /, *., /.)
     #[precedence(level="1")]
     #[assoc(side="left")]
-    <exp_left: MiddleExpr> <op: FactorOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+    <l:@L> <exp_left: MiddleExpr> <op: FactorOp> <exp_right: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r))),
 
+    // 和 (+, -, +., -.)
     #[precedence(level="2")]
     #[assoc(side="left")]
-    <exp_left: MiddleExpr> <op: TermOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+    <l:@L> <exp_left: MiddleExpr> <op: TermOp> <exp_right: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r))),
 
+    // 比較演算子 (<, >, <=, >=, =, <>)
     #[precedence(level="3")]
     #[assoc(side="left")]
-    <exp_left: MiddleExpr> <op: CompareOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
-    <exp_right: MiddleExpr> <op: RevCompareOp> <exp_left: MiddleExpr> => Box::new(Expr::BiOp{<>}),
-    <exp_left: MiddleExpr> <op: NotCompareOp> <exp_right: MiddleExpr> => Box::new(Expr::UnOp{op: UnaryOp::Not, exp: Box::new(Expr::BiOp{<>})}),
-    <exp_right: MiddleExpr> <op: NotRevCompareOp> <exp_left: MiddleExpr> => Box::new(Expr::UnOp{op: UnaryOp::Not, exp: Box::new(Expr::BiOp{<>})}),
+    <l:@L> <exp_left: MiddleExpr> <op: CompareOp> <exp_right: MiddleExpr> <r:@R> => 
+        Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r))),
+    <l:@L> <exp_right: MiddleExpr> <op: RevCompareOp> <exp_left: MiddleExpr> <r:@R> => 
+        Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r))),
+    <l:@L> <exp_left: MiddleExpr> <op: NotCompareOp> <exp_right: MiddleExpr> <r:@R> => 
+        Box::new(Spanned::new(RawExpr::UnOp{op: UnaryOp::Not, exp: Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r)))}, (l,r))),
+    <l:@L> <exp_right: MiddleExpr> <op: NotRevCompareOp> <exp_left: MiddleExpr> <r:@R> => 
+        Box::new(Spanned::new(RawExpr::UnOp{op: UnaryOp::Not, exp: Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r)))}, (l,r))),
 
+    // タプル (括弧で囲われたカンマ区切りの式)
     #[precedence(level="4")]
-    "(" <TupleElements> ")" => Box::new(Expr::NewTuple(<>)),
+    <l:@L> "(" <elements: TupleElements> ")" <r:@R> => Box::new(Spanned::new(RawExpr::NewTuple(elements), (l,r))),
 
+    // 配列への代入
     #[precedence(level="5")]
-    <array: BasicExpr> "." "(" <index: MiddleExpr> ")" "<-" <value: MiddleExpr> => Box::new(Expr::ArrayPut{<>}),
+    <l:@L> <array: BasicExpr> "." "(" <index: MiddleExpr> ")" "<-" <value: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::ArrayPut{array, index, value}, (l,r))),
 
 };
 
@@ -80,11 +98,13 @@ TermOp: BinaryOp = {
 
 // 二項演算子（掛け算、割り算）
 FactorOp: BinaryOp = {
+    "*" => BinaryOp::Mul,
+    "/" => BinaryOp::Div,
     "*." => BinaryOp::FMul,
     "/." => BinaryOp::FDiv,
 };
 
-// 比較演算子群
+// 比較演算子
 CompareOp: BinaryOp = {
     "=" => BinaryOp::Eq,
     "<=" => BinaryOp::LEq,
@@ -102,22 +122,27 @@ NotRevCompareOp: BinaryOp = {
 
 // 括弧が無くても関数の引数になれる式
 BasicExpr: Box<Expr<Option<Type>>> = {
+    // 括弧で囲われた式、Unit
     #[precedence(level="0")]
     "(" <Expr> ")",
-    "(" ")" => Box::new(Expr::Unit),
+    <l:@L> "(" ")" <r:@R> => Box::new(Spanned::new(RawExpr::Unit, (l,r))),
 
+    // 整数リテラル
     #[precedence(level="1")]
-    Integer => Box::new(Expr::Int(<>)),
+    <l:@L> <integer: Integer> <r:@R> => Box::new(Spanned::new(RawExpr::Int(integer), (l,r))),
 
+    // 浮動小数リテラル
+    <l:@L> <float: Float> <r:@R> => Box::new(Spanned::new(RawExpr::Float(float), (l,r))),
+
+    // 変数名
+    <l:@L> <id: Identifier> <r:@R> => Box::new(Spanned::new(RawExpr::Var(id), (l,r))),
+
+    // ブール値 (true または false)
+    <l:@L> <boolean: Boolean> <r:@R> => Box::new(Spanned::new(RawExpr::Bool(boolean), (l,r))),
+
+    // 配列の値
     #[precedence(level="2")]
-    Float => Box::new(Expr::Float(<>)),
-
-    Identifier => Box::new(Expr::Var(<>)),
-
-    Boolean => Box::new(Expr::Bool(<>)),
-
-    #[precedence(level="3")]
-    <array: BasicExpr> "." "(" <index: MiddleExpr> ")" => Box::new(Expr::ArrayGet{<>}),    
+    <l:@L> <array: BasicExpr> "." "(" <index: MiddleExpr> ")" <r:@R> => Box::new(Spanned::new(RawExpr::ArrayGet{array, index}, (l,r))),    
     
 };
 
@@ -192,7 +217,7 @@ else {
 else {
     r"true|false" => BooleanRegex,
     "not","if","then","else","let","in","rec",
-    "Array.(create|make)" => NewArrayRegex,
+    r"Array\.(create|make)" => NewArrayRegex,
 }
 else {
     r"[a-z]([0-9a-zA-Z_])*" => IdentifierRegex,
