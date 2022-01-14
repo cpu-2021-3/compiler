@@ -1,0 +1,200 @@
+use std::str::FromStr;
+use crate::syntax::{Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::ty::Type;
+use crate::id::generate_id;
+
+grammar;
+
+// すべての valid な式
+pub Expr: Box<Expr<Option<Type>>> = {
+    #[precedence(level="0")] 
+    MiddleExpr,
+    
+    #[precedence(level="1")]
+    "if" <cond: Expr> "then" <exp_then: Expr> "else" <exp_else: Expr> => Box::new(Expr::If{<>}),
+
+    #[precedence(level="2")]
+    #[assoc(side = "left")]
+    <exp_var: Expr> ";" <exp_suc: Expr> => {
+        let typed_var = TypedVar::<Option<Type>> {name: generate_id("sm"), t: Some(Type::Unit)};
+        Box::new(Expr::LetIn{var: typed_var, exp_var: exp_var, exp_suc: exp_suc})
+    },
+
+    #[precedence(level="3")]
+    "let" <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
+        let typed_var = TypedVar::<Option<Type>> {name: var_name, t: None};
+        Box::new(Expr::LetIn{var: typed_var, exp_var: exp_var, exp_suc: exp_suc})
+    },
+
+    "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> 
+        => Box::new(Expr::LetRecIn{<>}),
+
+    "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> => Box::new(Expr::LetTupleIn{<>}),
+};
+
+// if 文より大きい優先度の式
+MiddleExpr: Box<Expr<Option<Type>>> = {
+    #[precedence(level="0")] 
+    BasicExpr,
+    <op: UnaryOp> <exp: MiddleExpr> => Box::new(Expr::UnOp{<>}),
+    <fun: BasicExpr> <args: AppliedArgs> => Box::new(Expr::Apply{<>}),
+    NewArrayRegex <size: BasicExpr> <value: BasicExpr> => Box::new(Expr::NewArray{<>}),
+
+    #[precedence(level="1")]
+    #[assoc(side="left")]
+    <exp_left: MiddleExpr> <op: FactorOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+
+    #[precedence(level="2")]
+    #[assoc(side="left")]
+    <exp_left: MiddleExpr> <op: TermOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+
+    #[precedence(level="3")]
+    #[assoc(side="left")]
+    <exp_left: MiddleExpr> <op: CompareOp> <exp_right: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+    <exp_right: MiddleExpr> <op: RevCompareOp> <exp_left: MiddleExpr> => Box::new(Expr::BiOp{<>}),
+    <exp_left: MiddleExpr> <op: NotCompareOp> <exp_right: MiddleExpr> => Box::new(Expr::UnOp{op: UnaryOp::Not, exp: Box::new(Expr::BiOp{<>})}),
+    <exp_right: MiddleExpr> <op: NotRevCompareOp> <exp_left: MiddleExpr> => Box::new(Expr::UnOp{op: UnaryOp::Not, exp: Box::new(Expr::BiOp{<>})}),
+
+    #[precedence(level="4")]
+    "(" <TupleElements> ")" => Box::new(Expr::NewTuple(<>)),
+
+    #[precedence(level="5")]
+    <array: BasicExpr> "." "(" <index: MiddleExpr> ")" "<-" <value: MiddleExpr> => Box::new(Expr::ArrayPut{<>}),
+
+};
+
+// 単項演算子
+UnaryOp: UnaryOp = {
+    "not" => UnaryOp::Not,
+    "-" => UnaryOp::Neg,
+    "-." => UnaryOp::FNeg,
+};
+
+// 二項演算子（足し算、引き算）
+TermOp: BinaryOp = {
+    "+" => BinaryOp::Add,
+    "-" => BinaryOp::Sub,
+    "+." => BinaryOp::FAdd,
+    "-." => BinaryOp::FSub,
+};
+
+// 二項演算子（掛け算、割り算）
+FactorOp: BinaryOp = {
+    "*." => BinaryOp::FMul,
+    "/." => BinaryOp::FDiv,
+};
+
+// 比較演算子群
+CompareOp: BinaryOp = {
+    "=" => BinaryOp::Eq,
+    "<=" => BinaryOp::LEq,
+};
+RevCompareOp: BinaryOp = {
+    ">=" => BinaryOp::LEq,
+};
+NotCompareOp: BinaryOp = {
+    "<>" => BinaryOp::Eq,
+    ">" => BinaryOp::LEq,
+};
+NotRevCompareOp: BinaryOp = {
+    "<" => BinaryOp::LEq,
+};
+
+// 括弧が無くても関数の引数になれる式
+BasicExpr: Box<Expr<Option<Type>>> = {
+    #[precedence(level="0")]
+    "(" <Expr> ")",
+    "(" ")" => Box::new(Expr::Unit),
+
+    #[precedence(level="1")]
+    Integer => Box::new(Expr::Int(<>)),
+
+    #[precedence(level="2")]
+    Float => Box::new(Expr::Float(<>)),
+
+    Identifier => Box::new(Expr::Var(<>)),
+
+    Boolean => Box::new(Expr::Bool(<>)),
+
+    #[precedence(level="3")]
+    <array: BasicExpr> "." "(" <index: MiddleExpr> ")" => Box::new(Expr::ArrayGet{<>}),    
+    
+};
+
+// 関数の引数（適用時）
+AppliedArgs: Vec<Box<Expr<Option<Type>>>> = {
+    <v: AppliedArgs> <e:BasicExpr> => {
+        let mut v = v;
+        v.push(e);
+        v
+    },
+    BasicExpr => vec![<>]
+};
+
+// 関数の引数（宣言時）
+DeclaredArgs: Vec<TypedVar<Option<Type>>> = {
+    <v: DeclaredArgs> <id: Identifier> => {
+        let mut v = v;
+        v.push(TypedVar::<Option<Type>>{name: id, t: None});
+        v
+    },
+    Identifier => vec![TypedVar::<Option<Type>>{name: <>, t: None}] 
+};
+
+// タプルの要素をカンマ区切りにしたもの (長さ 2 以上)
+TupleElements: Vec<Box<Expr<Option<Type>>>> = {
+    <v: TupleElements> "," <e: Expr> => {
+        let mut v = v;
+        v.push(e);
+        v
+    },
+    <e1: Expr> "," <e2: Expr> => vec![e1, e2]
+};
+
+// let 文中のタプルの要素
+DeclaredTuple: Vec<TypedVar<Option<Type>>> = {
+    <v: DeclaredTuple> "," <id: Identifier> => {
+        let mut v = v;
+        v.push(TypedVar::<Option<Type>>{name: id, t: None});
+        v
+    },
+    <id1: Identifier> "," <id2: Identifier> => {
+        let t1 = TypedVar::<Option<Type>>{name: id1, t: None};
+        let t2 = TypedVar::<Option<Type>>{name: id2, t: None};
+        vec![t1, t2]
+    }
+};
+
+
+Integer: i32 = {
+    IntegerRegex => i32::from_str(<>).unwrap()
+};
+
+Float: f32 = {
+    FloatRegex => f32::from_str(<>).unwrap()
+};
+
+Boolean: bool = {
+    BooleanRegex => bool::from_str(<>).unwrap()
+};
+
+Identifier: String = {
+    "_" => generate_id("us."),
+    IdentifierRegex => <>.to_string(),
+};
+
+match {
+    r"[0-9]+" => IntegerRegex
+}
+else {
+    r"[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?" => FloatRegex,
+}
+else {
+    r"true|false" => BooleanRegex,
+    "not","if","then","else","let","in","rec",
+    "Array.(create|make)" => NewArrayRegex,
+}
+else {
+    r"[a-z]([0-9a-zA-Z_])*" => IdentifierRegex,
+    _
+}
