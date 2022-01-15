@@ -1,12 +1,12 @@
 use std::str::FromStr;
-use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar, ASTType};
 use crate::ty::Type;
 use crate::id::generate_id;
 
 grammar;
 
 // すべての valid な式
-pub Expr: Box<Expr<Option<Type>>> = {
+pub Expr: Box<Expr<ASTType>> = {
     // 優先順位がより高い式
     #[precedence(level="0")] 
     MiddleExpr,
@@ -18,16 +18,16 @@ pub Expr: Box<Expr<Option<Type>>> = {
 
     // セミコロン (式;式)
     #[precedence(level="2")]
-    #[assoc(side = "left")]
+    #[assoc(side = "right")]
     <l:@L> <exp_var: Expr> ";" <exp_suc: Expr> <r:@R> => {
-        let var = TypedVar::<Option<Type>> {name: generate_id("sm"), t: Some(Type::Unit)};
+        let var = TypedVar::<ASTType> {name: generate_id("sm"), t: Some(Type::Unit)};
         Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 
     // let ~ in 文
     #[precedence(level="3")]
     <l:@L> "let" <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> => {
-        let var = TypedVar::<Option<Type>> {name: var_name, t: None};
+        let var = TypedVar::<ASTType> {name: var_name, t: None};
         Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 
@@ -41,7 +41,7 @@ pub Expr: Box<Expr<Option<Type>>> = {
 };
 
 // if 文より大きい優先度の式
-MiddleExpr: Box<Expr<Option<Type>>> = {
+MiddleExpr: Box<Expr<ASTType>> = {
     // 優先順位がより高い式、単項演算子 (not, -, -.)、関数適用、Array.create
     #[precedence(level="0")] 
     BasicExpr,
@@ -121,7 +121,7 @@ NotRevCompareOp: BinaryOp = {
 };
 
 // 括弧が無くても関数の引数になれる式
-BasicExpr: Box<Expr<Option<Type>>> = {
+BasicExpr: Box<Expr<ASTType>> = {
     // 括弧で囲われた式、Unit
     #[precedence(level="0")]
     "(" <Expr> ")",
@@ -147,7 +147,7 @@ BasicExpr: Box<Expr<Option<Type>>> = {
 };
 
 // 関数の引数（適用時）
-AppliedArgs: Vec<Box<Expr<Option<Type>>>> = {
+AppliedArgs: Vec<Box<Expr<ASTType>>> = {
     <v: AppliedArgs> <e:BasicExpr> => {
         let mut v = v;
         v.push(e);
@@ -157,17 +157,17 @@ AppliedArgs: Vec<Box<Expr<Option<Type>>>> = {
 };
 
 // 関数の引数（宣言時）
-DeclaredArgs: Vec<TypedVar<Option<Type>>> = {
+DeclaredArgs: Vec<TypedVar<ASTType>> = {
     <v: DeclaredArgs> <id: Identifier> => {
         let mut v = v;
-        v.push(TypedVar::<Option<Type>>{name: id, t: None});
+        v.push(TypedVar::<ASTType>{name: id, t: None});
         v
     },
-    Identifier => vec![TypedVar::<Option<Type>>{name: <>, t: None}] 
+    Identifier => vec![TypedVar::<ASTType>{name: <>, t: None}] 
 };
 
 // タプルの要素をカンマ区切りにしたもの (長さ 2 以上)
-TupleElements: Vec<Box<Expr<Option<Type>>>> = {
+TupleElements: Vec<Box<Expr<ASTType>>> = {
     <v: TupleElements> "," <e: Expr> => {
         let mut v = v;
         v.push(e);
@@ -177,15 +177,15 @@ TupleElements: Vec<Box<Expr<Option<Type>>>> = {
 };
 
 // let 文中のタプルの要素
-DeclaredTuple: Vec<TypedVar<Option<Type>>> = {
+DeclaredTuple: Vec<TypedVar<ASTType>> = {
     <v: DeclaredTuple> "," <id: Identifier> => {
         let mut v = v;
-        v.push(TypedVar::<Option<Type>>{name: id, t: None});
+        v.push(TypedVar::<ASTType>{name: id, t: None});
         v
     },
     <id1: Identifier> "," <id2: Identifier> => {
-        let t1 = TypedVar::<Option<Type>>{name: id1, t: None};
-        let t2 = TypedVar::<Option<Type>>{name: id2, t: None};
+        let t1 = TypedVar::<ASTType>{name: id1, t: None};
+        let t2 = TypedVar::<ASTType>{name: id2, t: None};
         vec![t1, t2]
     }
 };

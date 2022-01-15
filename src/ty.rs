@@ -6,5 +6,5 @@ pub enum Type {
     Float,
     Fun(Vec<Type>, Box<Type>),
     Tuple(Vec<Type>),
-    Array(Vec<Type>)
+    Array(Vec<Type>),
 }

@@ -5,12 +5,12 @@ pub type Span = (usize, usize);
 #[derive(Debug)]
 pub struct Spanned<T> {
     pub item: T,
-    pub span: Span
+    pub span: Span,
 }
 
 impl<T> Spanned<T> {
     pub fn new(item: T, span: Span) -> Self {
-        Self {item, span}
+        Self { item, span }
     }
 }
 
@@ -24,34 +24,73 @@ pub enum RawExpr<T> {
     Float(f32),
     Var(String),
 
-    UnOp {op: UnaryOp, exp: Box<Expr<T>>},
-    BiOp {exp_left: Box<Expr<T>>, op: BinaryOp, exp_right: Box<Expr<T>>},
+    UnOp {
+        op: UnaryOp,
+        exp: Box<Expr<T>>,
+    },
+    BiOp {
+        exp_left: Box<Expr<T>>,
+        op: BinaryOp,
+        exp_right: Box<Expr<T>>,
+    },
 
-    Apply {fun: Box<Expr<T>>, args: Vec<Box<Expr<T>>>},
+    Apply {
+        fun: Box<Expr<T>>,
+        args: Vec<Box<Expr<T>>>,
+    },
 
-    If {cond: Box<Expr<T>>, exp_then: Box<Expr<T>>, exp_else: Box<Expr<T>>},
+    If {
+        cond: Box<Expr<T>>,
+        exp_then: Box<Expr<T>>,
+        exp_else: Box<Expr<T>>,
+    },
 
-    LetIn {var: TypedVar<T>, exp_var: Box<Expr<T>>, exp_suc: Box<Expr<T>>},
-    LetRecIn {fun_name: String, args: Vec<TypedVar<T>>, exp_fun: Box<Expr<T>>, exp_suc: Box<Expr<T>>},
-    LetTupleIn {vars: Vec<TypedVar<T>>, exp_var: Box<Expr<T>>, exp_suc: Box<Expr<T>>},
+    LetIn {
+        var: TypedVar<T>,
+        exp_var: Box<Expr<T>>,
+        exp_suc: Box<Expr<T>>,
+    },
+    LetRecIn {
+        fun_name: String,
+        args: Vec<TypedVar<T>>,
+        exp_fun: Box<Expr<T>>,
+        exp_suc: Box<Expr<T>>,
+    },
+    LetTupleIn {
+        vars: Vec<TypedVar<T>>,
+        exp_var: Box<Expr<T>>,
+        exp_suc: Box<Expr<T>>,
+    },
 
     NewTuple(Vec<Box<Expr<T>>>),
-    NewArray {size: Box<Expr<T>>, value: Box<Expr<T>>},
-    ArrayGet {array: Box<Expr<T>>, index: Box<Expr<T>>},
-    ArrayPut {array: Box<Expr<T>>, index: Box<Expr<T>>, value: Box<Expr<T>>},
+    NewArray {
+        size: Box<Expr<T>>,
+        value: Box<Expr<T>>,
+    },
+    ArrayGet {
+        array: Box<Expr<T>>,
+        index: Box<Expr<T>>,
+    },
+    ArrayPut {
+        array: Box<Expr<T>>,
+        index: Box<Expr<T>>,
+        value: Box<Expr<T>>,
+    },
 }
 
 pub type Expr<T> = Spanned<RawExpr<T>>;
 
+pub type ASTType = Option<crate::ty::Type>;
+
 #[derive(Debug)]
 pub struct TypedVar<T> {
     pub name: String,
-    pub t: T
+    pub t: T,
 }
 
 impl<T> TypedVar<T> {
     pub fn new(name: String, t: T) -> Self {
-        Self {name, t}
+        Self { name, t }
     }
 }
 
