@@ -1,47 +1,76 @@
 use std::str::FromStr;
-use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar, ASTType};
-use crate::ty::Type;
+use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::ty::{VarType};
 use crate::id::generate_id;
+use std::{rc::Rc, cell::RefCell};
 
 grammar;
 
 // すべての valid な式
-pub Expr: Box<Expr<ASTType>> = {
+pub Expr: Box<Expr<VarType>> = {
     // 優先順位がより高い式
-    #[precedence(level="0")] 
-    MiddleExpr,
-    
-    // if 式
-    #[precedence(level="1")]
-    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <exp_else: Expr> <r:@R> 
-        => Box::new(Spanned::new(RawExpr::If{cond, exp_then, exp_else}, (l,r))),
+    SemiSeqExpr,
+}
 
+// セミコロンを含む式
+SemiSeqExpr: Box<Expr<VarType>> = {
+    LetExpr,
     // セミコロン (式;式)
-    #[precedence(level="2")]
-    #[assoc(side = "right")]
-    <l:@L> <exp_var: Expr> ";" <exp_suc: Expr> <r:@R> => {
-        let var = TypedVar::<ASTType> {name: generate_id("sm"), t: Some(Type::Unit)};
+    <l:@L> <exp_var: SemiExpr> ";" <exp_suc: LetExpr> <r:@R> => {
+        let var = TypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()};
         Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
+};
 
+// let を含む式
+LetExpr: Box<Expr<VarType>> = {
+    IfExpr,
     // let ~ in 文
-    #[precedence(level="3")]
-    <l:@L> "let" <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> => {
-        let var = TypedVar::<ASTType> {name: var_name, t: None};
-        Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
+    <l:@L> "let" <raw_expr: LetDecl> <r:@R> => {
+        Box::new(Spanned::new(raw_expr, (l,r)))
     },
 
+    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <l2:@L> "let" <raw_expr: LetDecl> <r2:@R> <r:@R> => {
+        let exp_else = Box::new(Spanned::new(raw_expr, (l2,r2)));
+        Box::new(Spanned::new(RawExpr::If{cond, exp_then, exp_else}, (l,r)))
+    },
     // let rec ~ in 文
-    <l:@L> "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> <r:@R> 
-        => Box::new(Spanned::new(RawExpr::LetRecIn{fun_name, args, exp_fun, exp_suc}, (l,r))),
+    // <l:@L> "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> <r:@R> => {
+    //     let fun = TypedVar::<VarType> {name: fun_name, t: VarType::new()};
+    //     Box::new(Spanned::new(RawExpr::LetRecIn{fun, args, exp_fun, exp_suc}, (l,r)))
+    // },
 
     // let tuple ~ in 文
-    <l:@L> "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> 
-        => Box::new(Spanned::new(RawExpr::LetTupleIn{vars, exp_var, exp_suc}, (l,r))),
+    // <l:@L> "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> 
+    //     => Box::new(Spanned::new(RawExpr::LetTupleIn{vars, exp_var, exp_suc}, (l,r))),
+}
+
+LetInPart: RawExpr<VarType> = {
+    <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
+        let var = TypedVar::<VarType> {name: var_name, t: VarType::new()};
+        RawExpr::LetIn{var, exp_var, exp_suc}
+    }
+}
+
+SemiExpr: Box<Expr<VarType>> = {
+    IfExpr,
+    // セミコロン (式;式)
+    <l:@L> <exp_var: SemiExpr> ";" <exp_suc: IfExpr> <r:@R> => {
+        let var = TypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()};
+        Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
+    },
+};
+
+// if 文を含む式
+IfExpr: Box<Expr<VarType>> = {
+    MiddleExpr,
+    // if 式
+    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <exp_else: IfExpr> <r:@R> 
+        => Box::new(Spanned::new(RawExpr::If{cond, exp_then, exp_else}, (l,r))),
 };
 
 // if 文より大きい優先度の式
-MiddleExpr: Box<Expr<ASTType>> = {
+MiddleExpr: Box<Expr<VarType>> = {
     // 優先順位がより高い式、単項演算子 (not, -, -.)、関数適用、Array.create
     #[precedence(level="0")] 
     BasicExpr,
@@ -121,7 +150,7 @@ NotRevCompareOp: BinaryOp = {
 };
 
 // 括弧が無くても関数の引数になれる式
-BasicExpr: Box<Expr<ASTType>> = {
+BasicExpr: Box<Expr<VarType>> = {
     // 括弧で囲われた式、Unit
     #[precedence(level="0")]
     "(" <Expr> ")",
@@ -147,45 +176,42 @@ BasicExpr: Box<Expr<ASTType>> = {
 };
 
 // 関数の引数（適用時）
-AppliedArgs: Vec<Box<Expr<ASTType>>> = {
-    <v: AppliedArgs> <e:BasicExpr> => {
-        let mut v = v;
-        v.push(e);
+AppliedArgs: Vec<Expr<VarType>> = {
+    <mut v: AppliedArgs> <e:BasicExpr> => {
+        v.push(*e);
         v
     },
-    BasicExpr => vec![<>]
+    BasicExpr => vec![*<>]
 };
 
 // 関数の引数（宣言時）
-DeclaredArgs: Vec<TypedVar<ASTType>> = {
-    <v: DeclaredArgs> <id: Identifier> => {
-        let mut v = v;
-        v.push(TypedVar::<ASTType>{name: id, t: None});
+DeclaredArgs: Vec<TypedVar<VarType>> = {
+    <mut v: DeclaredArgs> <id: Identifier> => {
+        v.push(TypedVar::<VarType>{name: id, t: VarType::new()});
         v
     },
-    Identifier => vec![TypedVar::<ASTType>{name: <>, t: None}] 
+    Identifier => vec![TypedVar::<VarType>{name: <>, t: VarType::new()}] 
 };
 
 // タプルの要素をカンマ区切りにしたもの (長さ 2 以上)
-TupleElements: Vec<Box<Expr<ASTType>>> = {
-    <v: TupleElements> "," <e: Expr> => {
-        let mut v = v;
-        v.push(e);
+TupleElements: Vec<Expr<VarType>> = {
+    <mut v: TupleElements> "," <e: Expr> => {
+        v.push(*e);
         v
     },
-    <e1: Expr> "," <e2: Expr> => vec![e1, e2]
+    <e1: Expr> "," <e2: Expr> => vec![*e1, *e2]
 };
 
 // let 文中のタプルの要素
-DeclaredTuple: Vec<TypedVar<ASTType>> = {
+DeclaredTuple: Vec<TypedVar<VarType>> = {
     <v: DeclaredTuple> "," <id: Identifier> => {
         let mut v = v;
-        v.push(TypedVar::<ASTType>{name: id, t: None});
+        v.push(TypedVar::<VarType>{name: id, t: VarType::new()});
         v
     },
     <id1: Identifier> "," <id2: Identifier> => {
-        let t1 = TypedVar::<ASTType>{name: id1, t: None};
-        let t2 = TypedVar::<ASTType>{name: id2, t: None};
+        let t1 = TypedVar::<VarType>{name: id1, t: VarType::new()};
+        let t2 = TypedVar::<VarType>{name: id2, t: VarType::new()};
         vec![t1, t2]
     }
 };

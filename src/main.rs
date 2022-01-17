@@ -10,11 +10,10 @@ pub mod typing;
 
 fn main() {
     println!("Hello, world!");
-    let ast = parse::parse(
-        "let rec fib n =
-if n <= 1 then n else
-fib (n - 1) + fib (n - 2) in
-print_int (fib 30)",
+    let expr = parse::parse(
+        "a; let b = c in ()",
     );
-    println!("{:#?}", &ast);
+    let typed = typing::do_typing(*expr).unwrap();
+    println!("{:#?}", typed.0);
+    println!("{:?}", typed.1);
 }

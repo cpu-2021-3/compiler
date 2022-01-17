@@ -36,7 +36,7 @@ pub enum RawExpr<T> {
 
     Apply {
         fun: Box<Expr<T>>,
-        args: Vec<Box<Expr<T>>>,
+        args: Vec<Expr<T>>,
     },
 
     If {
@@ -51,7 +51,7 @@ pub enum RawExpr<T> {
         exp_suc: Box<Expr<T>>,
     },
     LetRecIn {
-        fun_name: String,
+        fun: TypedVar<T>,
         args: Vec<TypedVar<T>>,
         exp_fun: Box<Expr<T>>,
         exp_suc: Box<Expr<T>>,
@@ -62,7 +62,7 @@ pub enum RawExpr<T> {
         exp_suc: Box<Expr<T>>,
     },
 
-    NewTuple(Vec<Box<Expr<T>>>),
+    NewTuple(Vec<Expr<T>>),
     NewArray {
         size: Box<Expr<T>>,
         value: Box<Expr<T>>,
@@ -79,8 +79,6 @@ pub enum RawExpr<T> {
 }
 
 pub type Expr<T> = Spanned<RawExpr<T>>;
-
-pub type ASTType = Option<crate::ty::Type>;
 
 #[derive(Debug)]
 pub struct TypedVar<T> {
