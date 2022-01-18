@@ -92,14 +92,14 @@ impl<T> TypedVar<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UnaryOp {
     Not,
     Neg,
     FNeg,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,

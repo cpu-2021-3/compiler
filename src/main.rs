@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate lalrpop_util;
-#[macro_use]
 extern crate global_counter;
 pub mod id;
 pub mod parse;
@@ -8,12 +7,25 @@ pub mod syntax;
 pub mod ty;
 pub mod typing;
 
+use std::{env, fs};
+
+
 fn main() {
-    println!("Hello, world!");
-    let expr = parse::parse(
-        "a; let b = c in ()",
-    );
-    let typed = typing::do_typing(*expr).unwrap();
-    println!("{:#?}", typed.0);
+    let args: Vec<String> = env::args().collect();
+
+    let filename = &args[1];
+    let source_code = fs::read_to_string(filename).expect("error reading file");
+
+    //let source_code = "let rec f x = if x >= 0 then (f (x-1)) else () in print_float (-1.0)".to_string();
+
+    let expr = parse::parse(&source_code);
+    let typed = match typing::do_typing(*expr) {
+        Ok(elm) => elm,
+        Err(err) => {
+            println!("{}", err.message(&source_code));
+            panic!("{}", err);
+        }
+    };
+    println!("{:?}", typed.0);
     println!("{:?}", typed.1);
 }

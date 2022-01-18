@@ -2,7 +2,6 @@ use std::str::FromStr;
 use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
 use crate::ty::{VarType};
 use crate::id::generate_id;
-use std::{rc::Rc, cell::RefCell};
 
 grammar;
 
@@ -25,31 +24,31 @@ SemiSeqExpr: Box<Expr<VarType>> = {
 // let を含む式
 LetExpr: Box<Expr<VarType>> = {
     IfExpr,
-    // let ~ in 文
-    <l:@L> "let" <raw_expr: LetDecl> <r:@R> => {
+    <l:@L> "let" <raw_expr: LetInPart> <r:@R> => {
         Box::new(Spanned::new(raw_expr, (l,r)))
     },
 
-    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <l2:@L> "let" <raw_expr: LetDecl> <r2:@R> <r:@R> => {
+    <l:@L> "if" <cond: Expr> "then" <exp_then: Expr> "else" <l2:@L> "let" <raw_expr: LetInPart> <r2:@R> <r:@R> => {
         let exp_else = Box::new(Spanned::new(raw_expr, (l2,r2)));
         Box::new(Spanned::new(RawExpr::If{cond, exp_then, exp_else}, (l,r)))
     },
-    // let rec ~ in 文
-    // <l:@L> "let" "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> <r:@R> => {
-    //     let fun = TypedVar::<VarType> {name: fun_name, t: VarType::new()};
-    //     Box::new(Spanned::new(RawExpr::LetRecIn{fun, args, exp_fun, exp_suc}, (l,r)))
-    // },
-
-    // let tuple ~ in 文
-    // <l:@L> "let" "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> <r:@R> 
-    //     => Box::new(Spanned::new(RawExpr::LetTupleIn{vars, exp_var, exp_suc}, (l,r))),
 }
 
+// 3 種類の let 文のパーツ
 LetInPart: RawExpr<VarType> = {
     <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
         let var = TypedVar::<VarType> {name: var_name, t: VarType::new()};
         RawExpr::LetIn{var, exp_var, exp_suc}
-    }
+    },
+
+    "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> => {
+        let fun = TypedVar::<VarType> {name: fun_name, t: VarType::new()};
+        RawExpr::LetRecIn{fun, args, exp_fun, exp_suc}
+    },
+
+    "(" <vars: DeclaredTuple> ")" "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
+        RawExpr::LetTupleIn{vars, exp_var, exp_suc}
+    },
 }
 
 SemiExpr: Box<Expr<VarType>> = {
@@ -74,7 +73,14 @@ MiddleExpr: Box<Expr<VarType>> = {
     // 優先順位がより高い式、単項演算子 (not, -, -.)、関数適用、Array.create
     #[precedence(level="0")] 
     BasicExpr,
-    <l:@L> <op: UnaryOp> <exp: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::UnOp{op, exp}, (l,r))),
+    <l:@L> <op: UnaryOp> <exp: MiddleExpr> <r:@R> => {
+        if op == UnaryOp::Neg {
+            if let RawExpr::Float(f) = exp.item {
+                return Box::new(Spanned::new(RawExpr::UnOp{op: UnaryOp::FNeg, exp}, (l,r)));
+            }
+        }
+        Box::new(Spanned::new(RawExpr::UnOp{op, exp}, (l,r)))
+    },
     <l:@L> <fun: BasicExpr> <args: AppliedArgs> <r:@R> => Box::new(Spanned::new(RawExpr::Apply{fun, args}, (l,r))),
     <l:@L> NewArrayRegex <size: BasicExpr> <value: BasicExpr> <r:@R> => Box::new(Spanned::new(RawExpr::NewArray{size, value}, (l,r))),
 
@@ -101,12 +107,12 @@ MiddleExpr: Box<Expr<VarType>> = {
         Box::new(Spanned::new(RawExpr::UnOp{op: UnaryOp::Not, exp: Box::new(Spanned::new(RawExpr::BiOp{exp_left, op, exp_right}, (l,r)))}, (l,r))),
 
     // タプル (括弧で囲われたカンマ区切りの式)
-    #[precedence(level="4")]
-    <l:@L> "(" <elements: TupleElements> ")" <r:@R> => Box::new(Spanned::new(RawExpr::NewTuple(elements), (l,r))),
+    //#[precedence(level="4")]
+    //<l:@L> "(" <elements: TupleElements> ")" <r:@R> => Box::new(Spanned::new(RawExpr::NewTuple(elements), (l,r))),
 
     // 配列への代入
     #[precedence(level="5")]
-    <l:@L> <array: BasicExpr> "." "(" <index: MiddleExpr> ")" "<-" <value: MiddleExpr> <r:@R> => Box::new(Spanned::new(RawExpr::ArrayPut{array, index, value}, (l,r))),
+    <l:@L> <array: BasicExpr> "." "(" <index: MiddleExpr> ")" "<-" <value: IfExpr> <r:@R> => Box::new(Spanned::new(RawExpr::ArrayPut{array, index, value}, (l,r))),
 
 };
 
@@ -155,6 +161,9 @@ BasicExpr: Box<Expr<VarType>> = {
     #[precedence(level="0")]
     "(" <Expr> ")",
     <l:@L> "(" ")" <r:@R> => Box::new(Spanned::new(RawExpr::Unit, (l,r))),
+
+    // タプル (括弧で囲われたカンマ区切りの式)
+    <l:@L> "(" <elements: TupleElements> ")" <r:@R> => Box::new(Spanned::new(RawExpr::NewTuple(elements), (l,r))),
 
     // 整数リテラル
     #[precedence(level="1")]
@@ -222,7 +231,7 @@ Integer: i32 = {
 };
 
 Float: f32 = {
-    FloatRegex => f32::from_str(<>).unwrap()
+    FloatRegex => f32::from_str(<>).unwrap(),
 };
 
 Boolean: bool = {
@@ -235,6 +244,10 @@ Identifier: String = {
 };
 
 match {
+    //r"\(\*([^\*]|\*[^\)]|\n)*\*+\)" => {}
+    r"\(\*[^*]*\*+(?:[^\)*][^*]*\*+)*\)" => {}
+}
+else{
     r"[0-9]+" => IntegerRegex
 }
 else {
@@ -242,10 +255,14 @@ else {
 }
 else {
     r"true|false" => BooleanRegex,
-    "not","if","then","else","let","in","rec",
+    "not","if","then","else","let","in","rec","(",
     r"Array\.(create|make)" => NewArrayRegex,
 }
 else {
     r"[a-z]([0-9a-zA-Z_])*" => IdentifierRegex,
+}
+else
+{
+    r"\s*" => {},
     _
 }

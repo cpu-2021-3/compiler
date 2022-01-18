@@ -1,10 +1,41 @@
 use std::collections::HashMap;
 
-use crate::syntax::{Expr, UnaryOp::*, BinaryOp::*, Spanned, TypedVar};
+use crate::syntax::{Expr, UnaryOp::*, BinaryOp::*, Spanned, TypedVar, Span};
 use crate::syntax::RawExpr::*;
 use crate::ty::{VarType};
 use std::{rc::Rc, cell::RefCell};
-use anyhow::Result;
+use anyhow::{Result};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum TypingError {
+    #[error("the expression in `{span:?}` should be `{should_be:?}`, but is `{but_is:?}`")]
+    WrongType {span: Span, should_be: VarType, but_is: VarType},
+    #[error("the expression in `{span1:?}` is `{t1:?}`, but the expression in `{span2:?}` is `{t2:?}`, where they should be equal")]
+    UnequalType {span1: Span, span2: Span, t1: VarType, t2: VarType},
+    #[error("the expression in `{span:?}` has a recursive type")]
+    Recursive {span: Span}
+}
+
+impl TypingError {
+    pub fn message(&self, source_code: &str) -> String {
+        let (s, l) = 
+        match self {
+            TypingError::WrongType { span, ..} => 
+            (source_code[span.0..span.1].to_string(), source_code[0..span.0].chars().into_iter().filter(|x| *x=='\n').count()),
+            TypingError::UnequalType { span1, span2, ..} => 
+            (source_code[span1.0..span1.1].to_string() + " and " + &source_code[span2.0..span2.1],source_code[0..span1.0].chars().into_iter().filter(|x| *x=='\n').count()),
+            TypingError::Recursive { span } => 
+            (source_code[span.0..span.1].to_string(),source_code[0..span.0].chars().into_iter().filter(|x| *x=='\n').count()),
+        };
+        format!("typing error in {} (line {})", s, l + 1)
+    }
+}
+
+enum UnificationError {
+    Recursive,
+    Unequal
+}
 
 /// 型変数 r が t 中に出現するかを返す
 fn occurs(r: &Rc<RefCell<Option<VarType>>>, t: &VarType) -> bool{
@@ -39,7 +70,7 @@ fn occurs(r: &Rc<RefCell<Option<VarType>>>, t: &VarType) -> bool{
 /// 型方程式 t1 = t2 を解く
 /// 成功時: t1, t2 中の型変数が書き変わる
 /// 失敗時: Err を投げる
-fn unify(t1: &VarType, t2: &VarType) -> Result<()> {
+fn unify(t1: &VarType, t2: &VarType) -> Result<(), UnificationError> {
     match (t1, t2) {
         (VarType::Var(r1), VarType::Var(r2)) if Rc::ptr_eq(r1, r2) => {
             Ok(())
@@ -54,21 +85,21 @@ fn unify(t1: &VarType, t2: &VarType) -> Result<()> {
         },
         (VarType::Var(r1), _) => {
             if occurs(r1, t2) {
-                return Err(anyhow::anyhow!("Unification error: {:?} occurs in {:?}", r1, t2));
+                return Err(UnificationError::Recursive);
             }
             *r1.borrow_mut() = Some(t2.clone());
             Ok(())
         },
         (_, VarType::Var(r2)) => {
             if occurs(r2, t1) {
-                return Err(anyhow::anyhow!("Unification error: {:?} occurs in {:?}", r2, t1));
+                return Err(UnificationError::Recursive);
             }
             *r2.borrow_mut() = Some(t1.clone());
             Ok(())
         }
         (VarType::Fun(t1a, t1r), VarType::Fun(t2a, t2r)) => {
             if t1a.len() != t2a.len() {
-                return Err(anyhow::anyhow!("Unification error: function arguments {:?} and {:?} have different size", t1a, t2a));
+                return Err(UnificationError::Unequal);
             }
             for (a1, a2) in t1a.iter().zip(t2a) {
                 unify(a1, a2)?
@@ -77,7 +108,7 @@ fn unify(t1: &VarType, t2: &VarType) -> Result<()> {
         }
         (VarType::Tuple(t1s), VarType::Tuple(t2s)) => {
             if t1s.len() != t2s.len() {
-                return Err(anyhow::anyhow!("Unification error: function arguments {:?} and {:?} have different size", t1s, t2s));
+                return Err(UnificationError::Unequal);
             }
             for (s1, s2) in t1s.iter().zip(t2s) {
                 unify(s1, s2)?
@@ -89,11 +120,41 @@ fn unify(t1: &VarType, t2: &VarType) -> Result<()> {
         }
         (t1, t2) => {
             if t1 != t2 {
-                return Err(anyhow::anyhow!("Unification error: type {:?} and {:?} cannot be unified", t1, t2));
+                return Err(UnificationError::Unequal);
             }
             Ok(())
         }
     }
+}
+
+/// 一つの式を infer し、ある型と unify する
+fn unify_one_expr(t: &VarType, expr: &Expr<VarType>, env: &mut HashMap<String, VarType>, extenv: &mut HashMap<String, VarType>) -> Result<(), TypingError> {
+    let inferred_type = infer_expr(env, expr, extenv)?;
+    unify(&t, &inferred_type).map_err(|u|
+        match u {
+            UnificationError::Recursive => TypingError::Recursive{span: expr.span},
+            UnificationError::Unequal => TypingError::WrongType{span: expr.span, should_be: t.clone(), but_is: inferred_type},
+        }
+    )
+}
+
+// 二つの式を infer し、その二つの型を unify する
+fn unify_two_exprs(exp1: &Expr<VarType>, exp2: &Expr<VarType>, env: &mut HashMap<String, VarType>, extenv: &mut HashMap<String, VarType>) -> Result<(), TypingError> {
+    let _res = unify_two_exprs_and_return_type(exp1, exp2, env, extenv)?;
+    Ok(())
+}
+
+// 二つの式を infer し、その二つの型を unify する (unify したあと型を返す)
+fn unify_two_exprs_and_return_type(exp1: &Expr<VarType>, exp2: &Expr<VarType>, env: &mut HashMap<String, VarType>, extenv: &mut HashMap<String, VarType>) -> Result<VarType, TypingError> {
+    let inferred_type1 = infer_expr(env, exp1, extenv)?;
+    let inferred_type2 = infer_expr(env, exp2, extenv)?;
+    unify(&inferred_type1, &inferred_type2).map_err(|u|
+        match u {
+            UnificationError::Recursive => TypingError::Recursive{span: exp1.span},
+            UnificationError::Unequal => TypingError::UnequalType{span1: exp1.span, t1: inferred_type1.clone(), span2: exp2.span, t2: inferred_type2.clone()},
+        }
+    )?;
+    Ok(inferred_type1)
 }
 
 trait SolveVarType {
@@ -166,7 +227,7 @@ impl SolveVarType for VarType {
 }
 
 /// 型環境 env のもとで expr の型を推論する
-fn infer_expr(env: &mut HashMap<String, VarType>, expr: &Expr<VarType>, extenv: &mut HashMap<String, VarType>) -> Result<VarType> {
+fn infer_expr(env: &mut HashMap<String, VarType>, expr: &Expr<VarType>, extenv: &mut HashMap<String, VarType>) -> Result<VarType, TypingError> {
     let result = match &expr.item {
         Unit => VarType::Unit,
         Bool(_) => VarType::Bool,
@@ -178,44 +239,43 @@ fn infer_expr(env: &mut HashMap<String, VarType>, expr: &Expr<VarType>, extenv: 
                 Neg => VarType::Int,
                 FNeg => VarType::Float,
             };
-            unify(&inferred_type, &infer_expr(env, exp, extenv)?)?;
+            unify_one_expr(&inferred_type, exp, env, extenv)?;
             inferred_type
         },
         BiOp { exp_left, op, exp_right } => {
             match op {
                 Add | Sub | Mul | Div => {
-                    unify(&VarType::Int, &infer_expr(env, exp_left, extenv)?)?;
-                    unify(&VarType::Int, &infer_expr(env, exp_right, extenv)?)?;
+                    unify_one_expr(&VarType::Int, exp_left, env, extenv)?;
+                    unify_one_expr(&VarType::Int, exp_right, env, extenv)?;
                     VarType::Int
                 },
                 FAdd | FSub | FMul | FDiv => {
-                    unify(&VarType::Float, &infer_expr(env, exp_left, extenv)?)?;
-                    unify(&VarType::Float, &infer_expr(env, exp_right, extenv)?)?;
+                    unify_one_expr(&VarType::Float, exp_left, env, extenv)?;
+                    unify_one_expr(&VarType::Float, exp_right, env, extenv)?;
                     VarType::Float
                 },
                 Eq | LEq => {
-                    unify(&infer_expr(env,exp_left, extenv)?, &infer_expr(env, exp_right, extenv)?)?;
+                    unify_two_exprs(exp_left, exp_right, env, extenv)?;
                     VarType::Bool
                 }
             }
         },
         Apply { fun, args } => {
             let return_type = VarType::new();
-            let arg_types = args.iter().map(|arg| infer_expr(env, arg, extenv)).collect::<Result<_>>()?;
-            unify(&infer_expr(env, fun, extenv)?, &VarType::Fun(arg_types, Box::new(return_type.clone())))?;
+            let arg_types = args.iter().map(|arg| infer_expr(env, arg, extenv)).collect::<Result<_,_>>()?;
+            unify_one_expr(&VarType::Fun(arg_types, Box::new(return_type.clone())), fun, env, extenv)?;
             return_type
         },
         If { cond, exp_then, exp_else } => {
-            unify(&infer_expr(env, cond, extenv)?, &VarType::Bool)?;
-            let type_then = infer_expr(env, exp_then, extenv)?;
-            let type_else = infer_expr(env, exp_else, extenv)?;
-            unify(&type_then, &type_else)?;
-            type_then
+            unify_one_expr(&VarType::Bool, cond, env, extenv)?;
+            unify_two_exprs_and_return_type(exp_then, exp_else, env, extenv)?
         },
         LetIn { var, exp_var, exp_suc } => {
-            unify(&var.t, &infer_expr(env, exp_var, extenv)?)?;
+            unify_one_expr(&var.t, exp_var, env, extenv)?;
             env.insert(var.name.clone(),  var.t.clone());
-            infer_expr(env, exp_suc, extenv)?
+            let suc_type = infer_expr(env, exp_suc, extenv)?;
+            env.remove(&var.name);
+            suc_type
         },
         LetRecIn { fun, args, exp_fun, exp_suc } => {
             env.insert(fun.name.clone(), fun.t.clone());
@@ -224,34 +284,48 @@ fn infer_expr(env: &mut HashMap<String, VarType>, expr: &Expr<VarType>, extenv: 
                 env.insert(arg.name.clone(), arg.t.clone());
             }
             let return_type = infer_expr(env, exp_fun, extenv)?;
-            unify(&fun.t, &VarType::Fun(args.iter().map(|arg| arg.t.clone()).collect(), Box::new(return_type)))?;
+            for arg in args {
+                env.remove(&arg.name);
+            }
+            env.remove(&fun.name);
+            let fun_should_be = VarType::Fun(args.iter().map(|arg| arg.t.clone()).collect(), Box::new(return_type));
+            unify(&fun.t, &fun_should_be).map_err(|u| 
+                match u {
+                    UnificationError::Recursive => TypingError::Recursive {span: exp_fun.span},
+                    UnificationError::Unequal => TypingError::WrongType {span: exp_fun.span, should_be: fun_should_be, but_is: fun.t.clone()},
+                }
+            )?;
             whole_type
         },
         LetTupleIn { vars, exp_var, exp_suc } => {
-            unify(&VarType::Tuple(vars.iter().map(|var| var.t.clone()).collect()), &infer_expr(env, exp_var, extenv)?)?;
+            unify_one_expr(&VarType::Tuple(vars.iter().map(|var| var.t.clone()).collect()), exp_var, env, extenv)?;
             for var in vars {
                 env.insert(var.name.clone(), var.t.clone());
-            };
-            infer_expr(env, exp_suc, extenv)?
+            }
+            let suc_type = infer_expr(env, exp_suc, extenv)?;
+            for var in vars {
+                env.remove(&var.name);
+            }
+            suc_type
         },
         NewTuple(tuple) => {
-            VarType::Tuple(tuple.iter().map(|elm| infer_expr(env, elm, extenv)).collect::<Result<_>>()?)
+            VarType::Tuple(tuple.iter().map(|elm| infer_expr(env, elm, extenv)).collect::<Result<_,_>>()?)
         },
         NewArray { size, value } => {
-            unify(&infer_expr(env, size, extenv)?, &VarType::Int)?;
+            unify_one_expr(&VarType::Int, size, env, extenv)?;
             VarType::Array(Box::new(infer_expr(env, value, extenv)?))
         },
         ArrayGet { array, index } => {
             let result_type = VarType::new();
-            unify(&VarType::Array(Box::new(result_type.clone())), &infer_expr(env, array, extenv)?)?;
-            unify(&VarType::Int, &infer_expr(env, index, extenv)?)?;
+            unify_one_expr(&VarType::Array(Box::new(result_type.clone())), array, env, extenv)?;
+            unify_one_expr(&VarType::Int, index, env, extenv)?;
             result_type
         },
         ArrayPut { array, index, value } => {
             let element_type = infer_expr(env, value, extenv)?;
-            unify(&VarType::Array(Box::new(element_type.clone())), &infer_expr(env,array, extenv)?)?;
-            unify(&VarType::Int, &infer_expr(env, index, extenv)?)?;
-            element_type
+            unify_one_expr(&VarType::Array(Box::new(element_type.clone())), array, env, extenv)?;
+            unify_one_expr(&VarType::Int, index, env, extenv)?;
+            VarType::Unit
         },
         Var(name) => {
             if let Some(t) = env.get(name) {
@@ -271,10 +345,10 @@ fn infer_expr(env: &mut HashMap<String, VarType>, expr: &Expr<VarType>, extenv: 
     Ok(result)
 }
 
-pub fn do_typing(expr: Expr<VarType>) -> Result<(Expr<VarType>, HashMap<String, VarType>)> {
+pub fn do_typing(expr: Expr<VarType>) -> Result<(Expr<VarType>, HashMap<String, VarType>), TypingError> {
     let mut env = HashMap::new();
     let mut extenv = HashMap::new();
-    unify(&VarType::Unit,&infer_expr(&mut env, &expr,&mut extenv)?)?;
+    unify_one_expr(&VarType::Unit, &expr, &mut env, &mut extenv)?;
     extenv.iter_mut().for_each(|(_name ,t )| {*t = t.clone().solve();});
     Ok((expr.solve(), extenv))
 }
