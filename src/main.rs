@@ -6,6 +6,8 @@ pub mod parse;
 pub mod syntax;
 pub mod ty;
 pub mod typing;
+pub mod span;
+pub mod knormal;
 
 use std::{env, fs};
 

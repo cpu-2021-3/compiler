@@ -21,4 +21,14 @@ impl VarType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    Unit,
+    Bool,
+    Int,
+    Float,
+    Fun(Vec<Type>, Box<Type>),
+    Tuple(Vec<Type>),
+    Array(Box<Type>),
+}
 

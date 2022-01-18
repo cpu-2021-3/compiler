@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::syntax::{Expr, UnaryOp::*, BinaryOp::*, Spanned, TypedVar, Span};
+use crate::syntax::{Expr, UnaryOp::*, BinaryOp::*, TypedVar};
+use crate::span::*;
 use crate::syntax::RawExpr::*;
 use crate::ty::{VarType};
 use std::{rc::Rc, cell::RefCell};

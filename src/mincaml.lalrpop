@@ -1,5 +1,6 @@
 use std::str::FromStr;
-use crate::syntax::{Spanned, RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::syntax::{RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::span::Spanned;
 use crate::ty::{VarType};
 use crate::id::generate_id;
 
