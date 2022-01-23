@@ -1,4 +1,4 @@
-use crate::span::{Spanned};
+use crate::span::Spanned;
 
 /// min-caml コードの抽象構文木
 /// Expr<Option<Type>> とすることで型推論をしていない木を、Expr<Type> とすることで型が決定した木を表現できる
@@ -65,14 +65,15 @@ pub enum RawExpr<T> {
 }
 
 pub type Expr<T> = Spanned<RawExpr<T>>;
+pub type TypedVar<T> = Spanned<RawTypedVar<T>>;
 
 #[derive(Debug)]
-pub struct TypedVar<T> {
+pub struct RawTypedVar<T> {
     pub name: String,
     pub t: T,
 }
 
-impl<T> TypedVar<T> {
+impl<T> RawTypedVar<T> {
     pub fn new(name: String, t: T) -> Self {
         Self { name, t }
     }

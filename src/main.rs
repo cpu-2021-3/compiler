@@ -2,15 +2,15 @@
 extern crate lalrpop_util;
 extern crate global_counter;
 pub mod id;
+pub mod knormal;
+pub mod knormalize;
 pub mod parse;
+pub mod span;
 pub mod syntax;
 pub mod ty;
 pub mod typing;
-pub mod span;
-pub mod knormal;
 
 use std::{env, fs};
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -28,6 +28,8 @@ fn main() {
             panic!("{}", err);
         }
     };
-    println!("{:?}", typed.0);
-    println!("{:?}", typed.1);
+    //println!("{:?}", typed.0);
+    //println!("{:?}", typed.1);
+    let k_normalized = knormalize::k_normalize(typed.0, &typed.1);
+    println!("{:#?}", k_normalized);
 }

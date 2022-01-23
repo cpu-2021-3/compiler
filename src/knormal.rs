@@ -1,5 +1,6 @@
-use crate::span::{Spanned};
+use crate::span::Spanned;
 
+/// K 正規化された構文木
 #[derive(Debug)]
 pub enum RawExpr {
     Unit,
@@ -7,23 +8,31 @@ pub enum RawExpr {
     Float(f32),
     Var(String),
     UnOp {
-        op: UnaryOp, 
-        id: String
+        op: UnaryOp,
+        id: String,
     },
     BiOp {
-        id_left: String, op: BinaryOp, id_right: String
+        id_left: String,
+        op: BinaryOp,
+        id_right: String,
     },
     If {
-        id_left: String, op: CondOp, id_right: String, exp_then: Box<Expr>, exp_else: Box<Expr>
+        id_left: String,
+        op: CondOp,
+        id_right: String,
+        exp_then: Box<Expr>,
+        exp_else: Box<Expr>,
     },
     LetIn {
-        id: String, exp_id: Box<Expr>, exp_suc: Box<Expr>
+        id: String,
+        exp_id: Box<Expr>,
+        exp_suc: Box<Expr>,
     },
     LetRecIn {
         fun: String,
         args: Vec<String>,
-        exp_fun: Box<RawExpr>,
-        exp_suc: Box<RawExpr>,
+        exp_fun: Box<Expr>,
+        exp_suc: Box<Expr>,
     },
     Apply {
         fun: String,
@@ -42,21 +51,25 @@ pub enum RawExpr {
         array: String,
         index: String,
         value: String,
+    },
+    ExtArray {
+        array: String,
+    },
+    ExtApply {
+        fun: String,
+        args: Vec<String>,
     }
 }
 
 pub type Expr = Spanned<RawExpr>;
 
-
-
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
-    Not,
     Neg,
     FNeg,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -68,7 +81,7 @@ pub enum BinaryOp {
     FDiv,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CondOp {
     Eq,
     LEq,

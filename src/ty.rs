@@ -1,4 +1,5 @@
-use std::{rc::Rc, cell::RefCell};
+use std::{cell::RefCell, rc::Rc};
+use anyhow::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VarType {
@@ -9,7 +10,7 @@ pub enum VarType {
     Fun(Vec<VarType>, Box<VarType>),
     Tuple(Vec<VarType>),
     Array(Box<VarType>),
-    Var(Rc<RefCell<Option<VarType>>>)
+    Var(Rc<RefCell<Option<VarType>>>),
 }
 
 impl VarType {
@@ -18,6 +19,23 @@ impl VarType {
     }
     pub fn new() -> Self {
         Self::Var(Rc::new(RefCell::new(None)))
+    }
+    pub fn to_type(self) -> Result<Type> {
+        let result = match self {
+            VarType::Unit => Type::Unit,
+            VarType::Bool => Type::Bool,
+            VarType::Int => Type::Int,
+            VarType::Float => Type::Float,
+            VarType::Fun(args, ret) => 
+            Type::Fun(args.into_iter().map(|arg| arg.to_type()).collect::<Result<_, _>>()?, Box::new(ret.to_type()?)),
+            VarType::Tuple(elms) => 
+            Type::Tuple(elms.into_iter().map(|elm| elm.to_type()).collect::<Result<_, _>>()?),
+            VarType::Array(elm) => Type::Array(Box::new(elm.to_type()?)),
+            VarType::Var(_) => {
+                return Err(anyhow::anyhow!("undecided type detected"));
+            },
+        };
+        Ok(result)
     }
 }
 
@@ -31,4 +49,3 @@ pub enum Type {
     Tuple(Vec<Type>),
     Array(Box<Type>),
 }
-

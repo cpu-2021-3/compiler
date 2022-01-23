@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use crate::syntax::{RawExpr, Expr, UnaryOp, BinaryOp, TypedVar};
+use crate::syntax::{RawExpr, Expr, UnaryOp, BinaryOp, TypedVar, RawTypedVar};
 use crate::span::Spanned;
 use crate::ty::{VarType};
 use crate::id::generate_id;
@@ -17,7 +17,7 @@ SemiSeqExpr: Box<Expr<VarType>> = {
     LetExpr,
     // セミコロン (式;式)
     <l:@L> <exp_var: SemiExpr> ";" <exp_suc: LetExpr> <r:@R> => {
-        let var = TypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()};
+        let var = Spanned::new(RawTypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()}, (l,l));
         Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 };
@@ -37,13 +37,13 @@ LetExpr: Box<Expr<VarType>> = {
 
 // 3 種類の let 文のパーツ
 LetInPart: RawExpr<VarType> = {
-    <var_name: Identifier> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
-        let var = TypedVar::<VarType> {name: var_name, t: VarType::new()};
+    <l:@L> <var_name: Identifier> <r:@R> "=" <exp_var: Expr> "in" <exp_suc: Expr> => {
+        let var = Spanned::new(RawTypedVar::<VarType> {name: var_name, t: VarType::new()}, (l,r));
         RawExpr::LetIn{var, exp_var, exp_suc}
     },
 
-    "rec" <fun_name: Identifier> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> => {
-        let fun = TypedVar::<VarType> {name: fun_name, t: VarType::new()};
+    "rec" <l:@L> <fun_name: Identifier> <r:@R> <args: DeclaredArgs> "=" <exp_fun: Expr> "in" <exp_suc: Expr> => {
+        let fun = Spanned::new(RawTypedVar::<VarType> {name: fun_name, t: VarType::new()}, (l,r));
         RawExpr::LetRecIn{fun, args, exp_fun, exp_suc}
     },
 
@@ -56,7 +56,7 @@ SemiExpr: Box<Expr<VarType>> = {
     IfExpr,
     // セミコロン (式;式)
     <l:@L> <exp_var: SemiExpr> ";" <exp_suc: IfExpr> <r:@R> => {
-        let var = TypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()};
+        let var = Spanned::new(RawTypedVar::<VarType> {name: generate_id("sm"), t: VarType::Unit.wrap_var()}, (l,l));
         Box::new(Spanned::new(RawExpr::LetIn{var, exp_var, exp_suc}, (l,r)))
     },
 };
@@ -196,11 +196,11 @@ AppliedArgs: Vec<Expr<VarType>> = {
 
 // 関数の引数（宣言時）
 DeclaredArgs: Vec<TypedVar<VarType>> = {
-    <mut v: DeclaredArgs> <id: Identifier> => {
-        v.push(TypedVar::<VarType>{name: id, t: VarType::new()});
+    <mut v: DeclaredArgs> <l:@L> <id: Identifier> <r:@R> => {
+        v.push(Spanned::new(RawTypedVar::<VarType>{name: id, t: VarType::new()}, (l,r)));
         v
     },
-    Identifier => vec![TypedVar::<VarType>{name: <>, t: VarType::new()}] 
+    <l:@L> <id: Identifier> <r:@R> => vec![Spanned::new(RawTypedVar::<VarType>{name: id, t: VarType::new()}, (l,r))] 
 };
 
 // タプルの要素をカンマ区切りにしたもの (長さ 2 以上)
@@ -214,14 +214,14 @@ TupleElements: Vec<Expr<VarType>> = {
 
 // let 文中のタプルの要素
 DeclaredTuple: Vec<TypedVar<VarType>> = {
-    <v: DeclaredTuple> "," <id: Identifier> => {
+    <v: DeclaredTuple> "," <l:@L> <id: Identifier> <r:@R> => {
         let mut v = v;
-        v.push(TypedVar::<VarType>{name: id, t: VarType::new()});
+        v.push(Spanned::new(RawTypedVar::<VarType>{name: id, t: VarType::new()}, (l,r)));
         v
     },
-    <id1: Identifier> "," <id2: Identifier> => {
-        let t1 = TypedVar::<VarType>{name: id1, t: VarType::new()};
-        let t2 = TypedVar::<VarType>{name: id2, t: VarType::new()};
+    <l1:@L> <id1: Identifier> <r1:@R> "," <l2:@L> <id2: Identifier> <r2:@R> => {
+        let t1 = Spanned::new(RawTypedVar::<VarType>{name: id1, t: VarType::new()}, (l1,r1));
+        let t2 = Spanned::new(RawTypedVar::<VarType>{name: id2, t: VarType::new()}, (l2,r2));
         vec![t1, t2]
     }
 };
