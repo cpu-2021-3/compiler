@@ -41,7 +41,7 @@ pub enum RawExpr {
     NewTuple(Vec<String>),
     TupleGet {
         tuple: String,
-        index: String,
+        index: usize,
     },
     ArrayGet {
         array: String,

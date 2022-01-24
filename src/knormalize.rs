@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::knormal::{Expr, RawExpr, UnaryOp, BinaryOp, CondOp};
 use crate::span::*;
@@ -6,19 +7,26 @@ use crate::syntax;
 use crate::ty::{Type, VarType};
 use crate::id::generate_id;
 
-// fn insert_let((expr, t): (Box<Expr>, Type), f_exp_t_cont: &dyn Fn(String) -> RawExpr) -> Box<Expr> {
-//     match expr.item {
-//         RawExpr::Var(id) => wrap(f_exp_t_cont(id)),
-//         _ => {
-//             let new_id = generate_id("kn");
-//             let exp_cont = wrap(f_exp_t_cont(new_id.clone()));
-//             wrap(RawExpr::LetIn{
-//                 id: new_id, 
-//                 exp_id: expr, 
-//                 exp_suc: exp_cont})
-//         }
-//     }
-// }
+fn insert_let<F: FnOnce(String) -> RawExpr>((expr, t): (Box<Expr>, Type), env: Rc<RefCell<&mut HashMap<String, Type>>>, f_exp_t_cont: F) -> Box<Expr> {
+    let expr_span = expr.span.clone();
+    let raw_expr = match expr.item {
+        RawExpr::Var(id) => f_exp_t_cont(id),
+        _ => {
+            let new_id = generate_id("kn");
+            let exp_cont = f_exp_t_cont(new_id.clone());
+            env.borrow_mut().insert(new_id.clone(), t);
+            RawExpr::LetIn{
+                id: new_id, 
+                exp_id: expr, 
+                exp_suc: Box::new(Spanned::new(exp_cont, expr_span))}
+        }
+    };
+    Box::new(Spanned::new(raw_expr, expr_span))
+}
+
+//insert_let!
+//insert_let
+//env
 
 /// syntax::Expr 型の式を受け取り、knormal::Expr 型の式とその型をペアで返す
 /// この際、式中の変数名はかぶらないようにα変換された上で、各変数の型を env に登録していく
@@ -26,22 +34,7 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
     let expr_span = expr.span.clone();
     let wrap = |raw_expr: RawExpr| Box::new(Spanned::new(raw_expr, expr_span));
     let wrap_syntax_expr = |raw_expr: syntax::RawExpr<crate::ty::VarType>| Box::new(Spanned::new(raw_expr, expr_span));
-    // expr, t, f_exp_t_cont を受け取り、
-    // let new_var : t = expr in (<f_exp_t_cont(new_var)>)
-    // となる式を返す
-    let insert_let = |(expr, t) : (Box<Expr>, Type),  f_exp_t_cont: &dyn Fn(String) -> RawExpr| -> Box<Expr> {
-        match expr.item {
-            RawExpr::Var(id) => wrap(f_exp_t_cont(id)),
-            _ => {
-                let new_id = generate_id("kn");
-                let exp_cont = wrap(f_exp_t_cont(new_id.clone()));
-                wrap(RawExpr::LetIn{
-                    id: new_id, 
-                    exp_id: expr, 
-                    exp_suc: exp_cont})
-            }
-        }
-    };
+
     match expr.item {
         syntax::RawExpr::Unit => (wrap(RawExpr::Unit), Type::Unit),
         syntax::RawExpr::Bool(boolean) => (wrap(RawExpr::Int(if boolean { 1 } else { 0 })), Type::Int),
@@ -65,7 +58,8 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
                 syntax::UnaryOp::FNeg => (UnaryOp::FNeg, Type::Float),
                 syntax::UnaryOp::Not => unreachable!()
             };
-            (insert_let(k_exp, &|id| (RawExpr::UnOp{op: k_op.clone(), id})), res_type)
+            let env = Rc::new(RefCell::new(env));
+            (insert_let(k_exp, env, Box::new(|id| (RawExpr::UnOp{op: k_op.clone(), id}))), res_type)
         },
         syntax::RawExpr::BiOp { exp_left, op, exp_right} => {
             if op == syntax::BinaryOp::Eq || op == syntax::BinaryOp::LEq {
@@ -102,29 +96,31 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
                     syntax::BinaryOp::Eq |
                     syntax::BinaryOp::LEq => Type::Bool
                 };
-                (insert_let(k_exp_left, &|id_left| {
-                    insert_let(k_exp_right, &|id_right| {
+                let env = Rc::new(RefCell::new(env));
+                (insert_let(k_exp_left, env.clone(), Box::new(|id_left| {
+                    insert_let(k_exp_right, env.clone(), Box::new(|id_right| {
                         RawExpr::BiOp{id_left, op: k_op ,id_right}
-                    }).item
-                }), res_type)
+                    })).item
+                })), res_type)
             }
         },
         syntax::RawExpr::Apply { fun, args } => {
             let k_fun = convert_expr(*fun, env, alpha, extenv);
-            let (_, fun_type) = k_fun;
+            let fun_type = k_fun.1.clone();
+            let k_args : Vec<_> = args.into_iter().map(|arg|convert_expr(arg, env, alpha, extenv)).collect();
             match fun_type {
-                Type::Fun(arg_types, return_type) => {
-                    (insert_let(k_fun, &|fun_id| {
-                        let apply: Box<dyn FnOnce(Vec<String>) -> RawExpr> = Box::new(|arg_ids| RawExpr::Apply{fun: fun_id, args: arg_ids});
-                        args.into_iter().rev().fold(apply, |acc, arg| {
-                            Box::new(|mut arg_ids: Vec<String>| {
-                                insert_let(convert_expr(arg, env, alpha, extenv), &|arg_id| {
-                                    arg_ids.push(arg_id);
-                                    acc(arg_ids)
-                                }).item
-                            })
-                        })(vec![])
-                    }), *return_type)
+                Type::Fun(_, return_type) => {
+                    let env = Rc::new(RefCell::new(env));
+                    let apply: Box<dyn FnOnce(Vec<String>) -> RawExpr> = Box::new(|arg_ids| insert_let(k_fun, env.clone(), Box::new(|fun_id| RawExpr::Apply{fun: fun_id, args: arg_ids})).item);
+                    (wrap(k_args.into_iter().rev().fold(apply, |acc, arg| {
+                        Box::new(|mut arg_ids: Vec<String>| {
+                            insert_let(arg, env.clone(), Box::new(|arg_id| {
+                                arg_ids.push(arg_id);
+                                acc(arg_ids)
+                            })).item
+                        })
+                    })(vec![]))
+                    , *return_type)
                 },
                 _ => {
                     panic!("internal compiler error")
@@ -147,19 +143,20 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
                 } if op == syntax::BinaryOp::Eq || op == syntax::BinaryOp::LEq => {
                     let k_exp_left = convert_expr(*exp_left, env, alpha, extenv);
                     let k_exp_right = convert_expr(*exp_right, env, alpha, extenv);
-                    let (_, if_type) = k_exp_left;
+                    let if_type = k_exp_left.1.clone();
                     let k_op = match op {
                         syntax::BinaryOp::Eq => CondOp::Eq,
                         syntax::BinaryOp::LEq => CondOp::LEq,
                         _ => unreachable!()
                     };
-                    (insert_let(k_exp_left, &|id_left| {
-                        insert_let(k_exp_right, &|id_right| {
-                            let (exp_then, res_type) = convert_expr(*exp_then, env, alpha, extenv);
-                            let (exp_else, res_type) = convert_expr(*exp_else, env, alpha, extenv);
+                    let (exp_then, _) = convert_expr(*exp_then, env, alpha, extenv);
+                    let (exp_else, _) = convert_expr(*exp_else, env, alpha, extenv);
+                    let env = Rc::new(RefCell::new(env));
+                    (insert_let(k_exp_left, env.clone(), Box::new(|id_left| {
+                        insert_let(k_exp_right, env.clone(), Box::new(|id_right| {
                             RawExpr::If{id_left, op: k_op, id_right, exp_then, exp_else}
-                        }).item
-                    }), if_type)
+                        })).item
+                    })), if_type)
                 },
                 cond_item => {
                     convert_expr(*wrap_syntax_expr(syntax::RawExpr::If{
@@ -182,11 +179,11 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
             let old_var_name = var.item.name;
             let new_var_name = generate_id(&old_var_name);
             let (exp_var, type_var) = convert_expr(*exp_var, env, alpha, extenv);
-            env.insert(new_var_name, type_var);
-            alpha.entry(old_var_name).or_insert(vec![]);
-            alpha[&old_var_name].push(new_var_name);
+            env.insert(new_var_name.clone(), type_var);
+            let alpha_key = alpha.entry(old_var_name.clone()).or_insert(vec![]);
+            alpha_key.push(new_var_name.clone());
             let (exp_suc, type_suc) = convert_expr(*exp_suc, env, alpha, extenv);
-            alpha[&old_var_name].pop();
+            alpha.get_mut(&old_var_name).unwrap().pop();
             (wrap(RawExpr::LetIn{
                 id: new_var_name,
                 exp_id: exp_var,
@@ -201,25 +198,25 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
         } => {
             let old_fun_name = fun.item.name;
             let new_fun_name = generate_id(&old_fun_name);
-            env.insert(new_fun_name, fun.item.t.to_type().unwrap());
-            alpha.entry(old_fun_name).or_insert(vec![]);
-            alpha[&old_fun_name].push(new_fun_name);
+            env.insert(new_fun_name.clone(), fun.item.t.to_type().unwrap());
+            let alpha_key = alpha.entry(old_fun_name.clone()).or_insert(vec![]);
+            alpha_key.push(new_fun_name.clone());
             let (exp_suc, type_suc) = convert_expr(*exp_suc, env, alpha, extenv);
             let mut old_arg_names = vec![];
             let mut new_arg_names = vec![];
             args.into_iter().for_each(|arg| {
                 let old_arg_name = arg.item.name;
                 let new_arg_name = generate_id(&old_arg_name);
-                env.insert(new_arg_name, arg.item.t.to_type().unwrap());
-                alpha.entry(old_arg_name).or_insert(vec![]);
-                alpha[&old_arg_name].push(new_arg_name);
+                env.insert(new_arg_name.clone(), arg.item.t.to_type().unwrap());
+                let alpha_key = alpha.entry(old_arg_name.clone()).or_insert(vec![]);
+                alpha_key.push(new_arg_name.clone());
                 old_arg_names.push(old_arg_name);
                 new_arg_names.push(new_arg_name);
             });
-            let (exp_fun, type_fun) = convert_expr(*exp_fun, env, alpha, extenv);
-            alpha[&old_fun_name].pop();
+            let (exp_fun, _) = convert_expr(*exp_fun, env, alpha, extenv);
+            alpha.get_mut(&old_fun_name).unwrap().pop();
             old_arg_names.into_iter().for_each(|old_arg_name|{
-                alpha[&old_arg_name].pop();
+                alpha.get_mut(&old_arg_name).unwrap().pop();
             });
             (wrap(RawExpr::LetRecIn{
                 fun: new_fun_name,
@@ -233,65 +230,59 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
             exp_var,
             exp_suc,
         } => {
-            let res_type = Type::Unit;
-            let exp_suc: Box<dyn FnOnce(i32, &mut HashMap<String, Type>, &mut HashMap<String, Vec<String>>) -> RawExpr> = Box::new(|index, env, alpha| {
-                let (exp, t) = convert_expr(*exp_suc, env, alpha, extenv);
-                res_type = t;
-                exp.item
+            let k_exp_var = convert_expr(*exp_var, env, alpha, extenv);
+            let renamed_vars: Vec<_> = vars.iter().map(|elm| {
+                let old_elm_name = elm.item.name.clone();
+                let new_elm_name = generate_id(&old_elm_name);
+                env.insert(new_elm_name.clone(), elm.item.t.clone().to_type().unwrap());
+                let alpha_key = alpha.entry(old_elm_name.clone()).or_insert(vec![]);
+                alpha_key.push(new_elm_name.clone());
+                new_elm_name
+            }).collect();
+            let k_exp_suc = convert_expr(*exp_suc, env, alpha, extenv);
+            vars.iter().for_each(|elm| {
+                let old_elm_name = elm.item.name.clone();
+                alpha.get_mut(&old_elm_name).unwrap().pop();
             });
-            let res_expr = insert_let(convert_expr(*exp_var, env, alpha, extenv), &|tuple_id| {
-                vars.into_iter().rev().fold(exp_suc, |acc, elm| {
-                    Box::new(|index, env, alpha| {
-                        let old_elm_name = elm.item.name;
-                        let new_elm_name = generate_id(&old_elm_name);
-                        let index_id = generate_id("ti");
-                        env.insert(new_elm_name, elm.item.t.to_type().unwrap());
-                        env.insert(index_id, Type::Int);
-                        alpha.entry(old_elm_name).or_insert(vec![]);
-                        alpha[&old_elm_name].push(new_elm_name);
-                        let exp_suc = wrap(acc(index + 1, env, alpha));
-                        alpha[&old_elm_name].pop();
-                        RawExpr::LetIn{
-                            id: index_id,
-                            exp_id: wrap(RawExpr::Int(index)),
-                            exp_suc: 
-                            wrap(RawExpr::LetIn{
-                                id: new_elm_name,
-                                exp_id: wrap(RawExpr::TupleGet{tuple: tuple_id, index: index_id}),
-                                exp_suc
-                            })
-                        }
-                    })
-                })(0, env, alpha)
-            });
+            let res_type = k_exp_suc.1.clone();
+            let env = Rc::new(RefCell::new(env));
+            let res_expr = insert_let(k_exp_var, env, Box::new(|tuple_id: String| {
+                let mut exp_with_elms = k_exp_suc.0;
+                for (index, new_elm_name) in renamed_vars.into_iter().enumerate() {
+                    exp_with_elms = wrap(RawExpr::LetIn{ id: new_elm_name, exp_id: wrap(RawExpr::TupleGet{ tuple: tuple_id.clone(), index }), exp_suc: exp_with_elms} )
+                };
+                exp_with_elms.item
+            }));
             (res_expr, res_type)
         },
         syntax::RawExpr::NewTuple(exps) => {
-            let tuple_types = vec![];
+            let mut tuple_types = vec![];
             let exp_tuple: Box<dyn FnOnce(Vec<String>) -> RawExpr> = Box::new(|elm_ids| {
                 RawExpr::NewTuple(elm_ids)
             });
-            let exp_result = wrap(exps.into_iter().rev().fold(exp_tuple, |acc, elm| {
+            let k_exps: Vec<_> = exps.into_iter().map(|elm| convert_expr(elm, env, alpha, extenv)).collect();
+            let env = Rc::new(RefCell::new(env));
+            let exp_result = wrap(k_exps.into_iter().rev().fold(exp_tuple, |acc, k_elm| {
+                tuple_types.push(k_elm.1.clone());
                 Box::new(|mut elm_ids| {
-                    let k_elm = convert_expr(elm, env, alpha, extenv);
-                    let (_, elm_type) = k_elm;
-                    insert_let(k_elm, &|elm_id| {
+                    insert_let(k_elm, env.clone(), Box::new(|elm_id| {
                         elm_ids.push(elm_id);
-                        tuple_types.push(elm_type);
                         acc(elm_ids)
-                    }).item
+                    })).item
                 })
             })(vec![]));
             (exp_result, Type::Tuple(tuple_types))
         },
         syntax::RawExpr::NewArray { size, value } => {
             let mut type_array = Type::Unit;
-            let exp_array = insert_let(convert_expr(*size, env, alpha, extenv), &|size_id| {
-                let k_value = convert_expr(*value, env, alpha, extenv);
-                let (_, value_type) = k_value;
-                type_array = Type::Array(Box::new(value_type));
-                    insert_let(k_value, &|value_id| {
-                    let external_fun_name = match value_type {
+            let k_value = convert_expr(*value, env, alpha, extenv);
+            let k_size = convert_expr(*size, env, alpha, extenv);
+            let env = Rc::new(RefCell::new(env));
+            let exp_array = insert_let(k_size, env.clone(), Box::new(|size_id| {
+                let elm_type = k_value.1.clone();
+                type_array = Type::Array(Box::new(elm_type.clone()));
+                    insert_let(k_value, env.clone(), Box::new(|value_id| {
+                    let external_fun_name = match elm_type.clone() {
                         Type::Float => "create_float_array",
                         _ => "create_array",
                     }.to_string();
@@ -299,19 +290,21 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
                         fun: external_fun_name,
                         args: vec![size_id, value_id]
                     }
-                }).item
-            });
+                })).item
+            }));
             (exp_array, type_array)
         },
         syntax::RawExpr::ArrayGet { array, index } => {
             let k_array = convert_expr(*array, env, alpha, extenv);
-            match k_array.1 {
+            let k_index = convert_expr(*index, env, alpha, extenv);
+            match k_array.1.clone() {
                 Type::Array(elm_type) => {
-                    (insert_let(k_array, &|array_id| {
-                        insert_let(convert_expr(*index, env, alpha, extenv), &|index_id| {
+                    let env = Rc::new(RefCell::new(env));
+                    (insert_let(k_array, env.clone(), Box::new(|array_id| {
+                        insert_let(k_index, env.clone(), Box::new(|index_id| {
                             RawExpr::ArrayGet{array: array_id, index: index_id}
-                        }).item
-                    }), *elm_type)
+                        })).item
+                    })), *elm_type)
                 },
                 _ => panic!("internal compiler error")
             }
@@ -321,18 +314,22 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
             index,
             value,
         } => {
-            (insert_let(convert_expr(*array, env, alpha, extenv), &|array_id| {
-                insert_let(convert_expr(*index, env, alpha, extenv), &|index_id| {
-                    insert_let(convert_expr(*value, env, alpha, extenv), &|value_id| {
+            let k_array = convert_expr(*array, env, alpha, extenv);
+            let k_index = convert_expr(*index, env, alpha, extenv);
+            let k_value = convert_expr(*value, env, alpha, extenv);
+            let env = Rc::new(RefCell::new(env));
+            (insert_let(k_array, env.clone(), Box::new(|array_id: String| {
+                insert_let(k_index, env.clone(), Box::new(|index_id: String| {
+                    insert_let(k_value, env.clone(), Box::new(|value_id: String| {
                         RawExpr::ArrayPut{ array: array_id.clone(), index: index_id.clone(), value: value_id.clone() }
-                    }).item
-                }).item
-            }), Type::Unit)
+                    })).item
+                })).item
+            })), Type::Unit)
         },
         syntax::RawExpr::Var(id) => {
             if let Some(renamed_ids) = alpha.get(&id) {
                 let renamed_id = renamed_ids.last().unwrap();
-                let var_type = env[renamed_id].clone();
+                let var_type = env.get(renamed_id).unwrap().clone();
                 (wrap(RawExpr::Var(renamed_id.clone())), var_type)
             }
             else {
@@ -343,9 +340,10 @@ fn convert_expr(expr: syntax::Expr<VarType>, env: &mut HashMap<String, Type>, al
     }
 }
 
-pub fn k_normalize(expr: syntax::Expr<VarType>, extenv: &HashMap<String, VarType>) -> Expr {
+pub fn k_normalize(expr: syntax::Expr<VarType>, extenv: & HashMap<String, VarType>) -> Expr {
     let mut env = HashMap::new();
     let mut alpha = HashMap::new();
     let (expr, _) = convert_expr(expr, &mut env, &mut alpha, extenv);
+    println!("{:#?}", env);
     *expr
 }

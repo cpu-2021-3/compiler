@@ -31,5 +31,5 @@ fn main() {
     //println!("{:?}", typed.0);
     //println!("{:?}", typed.1);
     let k_normalized = knormalize::k_normalize(typed.0, &typed.1);
-    println!("{:#?}", k_normalized);
+    //println!("{:#?}", k_normalized);
 }
