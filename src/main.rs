@@ -37,7 +37,7 @@ fn main() {
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
     closurize::typecheck(&closurized, &k_env, &toplevels);
-    println!("{:#?}", k_env);
+    //println!("{:#?}", k_env);
     //println!("{:#?}", closurized);
     //println!("{:#?}", toplevels);
 }

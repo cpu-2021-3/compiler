@@ -578,7 +578,7 @@ mod tests {
             id: "x".to_string(),
             exp_id: wrap(RawExpr::Int(1)),
             exp_suc: wrap(RawExpr::LetIn {
-                id: "y".to_string(),
+                id: "z".to_string(),
                 exp_id: wrap(RawExpr::Float(2.0)),
                 exp_suc: wrap(RawExpr::LetIn {
                     id: "f".to_string(),
