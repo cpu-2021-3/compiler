@@ -248,3 +248,402 @@ pub fn closurize(expr: knormal::Expr, env: &HashMap<String, Type>) -> (Expr, Vec
     let (expr, toplevels) = convert_expr(&expr, env, &mut direct_funs);
     (*expr, toplevels)
 }
+
+// 式 (Expr) の型検査
+fn typecheck_expr(
+    expr: &Expr,
+    env: &HashMap<String, Type>,
+    scope: &mut HashSet<String>,
+    freevars_dict: &HashMap<String, Vec<String>>,
+) -> Type {
+    let get_type = |id| match env.get(id) {
+        Some(t) => t.clone(),
+        None => {
+            panic!("{} is not in list", id);
+        }
+    };
+    match &expr.item {
+        RawExpr::Unit => Type::Unit,
+        RawExpr::Int(_) => Type::Int,
+        RawExpr::Float(_) => Type::Float,
+        RawExpr::Var(id) => {
+            if !scope.contains(id) {
+                panic!("typecheck for closurized expression failed!");
+            }
+            get_type(id)
+        }
+        RawExpr::UnOp { op, id } => {
+            let res = match op {
+                UnaryOp::Neg => Type::Int,
+                UnaryOp::FNeg => Type::Float,
+            };
+            let actual = get_type(id);
+            if actual != res {
+                panic!("typecheck for closurized expression failed!");
+            }
+            res
+        }
+        RawExpr::BiOp {
+            id_left,
+            op,
+            id_right,
+        } => {
+            let res = match op {
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => Type::Int,
+                BinaryOp::FAdd | BinaryOp::FSub | BinaryOp::FMul | BinaryOp::FDiv => Type::Float,
+            };
+            let actual_left = get_type(id_left);
+            let actual_right = get_type(id_right);
+            if actual_left != res || actual_right != res {
+                panic!("typecheck for closurized expression failed!");
+            }
+            res
+        }
+        RawExpr::If {
+            id_left,
+            op,
+            id_right,
+            exp_then,
+            exp_else,
+        } => {
+            let type_left = get_type(id_left);
+            let type_right = get_type(id_right);
+            if type_left != type_right {
+                panic!("typecheck for closurized expression failed!");
+            }
+            if *op == CondOp::LEq {
+                if type_left != Type::Int && type_right != Type::Float {
+                    panic!("typecheck for closurized expression failed!");
+                }
+            }
+            let type_then = typecheck_expr(exp_then, env, scope, freevars_dict);
+            let type_else = typecheck_expr(exp_else, env, scope, freevars_dict);
+            if type_then != type_else {
+                panic!("typecheck for closurized expression failed!");
+            }
+            type_then
+        }
+        RawExpr::LetIn {
+            id,
+            exp_id,
+            exp_suc,
+        } => {
+            let type_id = typecheck_expr(exp_id, env, scope, freevars_dict);
+            if type_id != env.get(id).unwrap().clone() {
+                panic!("typecheck for closurized expression failed!");
+            }
+            if !scope.insert(id.clone()) {
+                panic!("typecheck for closurized expression failed!");
+            }
+            let type_suc = typecheck_expr(exp_suc, env, scope, freevars_dict);
+            scope.remove(id);
+            type_suc
+        }
+        RawExpr::ApplyCls { cls, args } => {
+            let type_cls = env.get(cls).unwrap().clone();
+            if !scope.contains(cls) {
+                panic!("typecheck for closurized expression failed!");
+            }
+            let actual_type_args: Vec<_> = args
+                .iter()
+                .map(|arg| env.get(arg).unwrap().clone())
+                .collect();
+            match type_cls {
+                Type::Fun(type_args, type_ret) => {
+                    if actual_type_args != *type_args {
+                        panic!("typecheck for closurized expression failed!");
+                    }
+                    *type_ret
+                }
+                _ => panic!("typecheck for closurized expression failed!"),
+            }
+        }
+        RawExpr::ApplyDir { tag, args } => {
+            // min_caml_create_array / min_caml_create_float_array のみ例外的に処理 (多相型なので扱いが難しい)
+            if tag == "min_caml_create_array" {
+                if env.get(args.get(0).unwrap()).unwrap() != &Type::Int {
+                    panic!("typecheck for closurized expression failed!");
+                }
+                return Type::Array(Box::new(env.get(args.get(1).unwrap()).unwrap().clone()));
+            }
+            if tag == "min_caml_create_float_array" {
+                if env.get(args.get(0).unwrap()).unwrap() != &Type::Int {
+                    panic!("typecheck for closurized expression failed!");
+                }
+                if env.get(args.get(1).unwrap()).unwrap() != &Type::Float {
+                    panic!("typecheck for closurized expression failed!");
+                }
+                return Type::Array(Box::new(Type::Float));
+            }
+            let type_tag = env.get(tag).unwrap().clone();
+            if scope.contains(tag) {
+                panic!("typecheck for closurized expression failed!");
+            }
+            let actual_type_args: Vec<_> = args
+                .iter()
+                .map(|arg| env.get(arg).unwrap().clone())
+                .collect();
+            match type_tag {
+                Type::Fun(type_args, type_ret) => {
+                    if actual_type_args != *type_args {
+                        panic!("typecheck for closurized expression failed!");
+                    }
+                    *type_ret
+                }
+                _ => panic!("typecheck for closurized expression failed!"),
+            }
+        }
+        RawExpr::NewTuple(elms) => Type::Tuple(
+            elms.iter()
+                .map(|elm| env.get(elm).unwrap().clone())
+                .collect(),
+        ),
+        RawExpr::NewClosure { tag, free_vars } => {
+            let type_tag = env.get(tag).unwrap().clone();
+            let freevars_page = freevars_dict.get(tag).unwrap();
+            if freevars_page != free_vars {
+                panic!("typecheck for closurized expression failed!")
+            }
+            type_tag
+        }
+        RawExpr::TupleGet { tuple, index } => {
+            let type_tuple = env.get(tuple).unwrap().clone();
+            match type_tuple {
+                Type::Tuple(elms) => {
+                    if *index >= elms.len() {
+                        panic!("typecheck for closurized expression failed!")
+                    }
+                    elms.get(*index).unwrap().clone()
+                }
+                _ => panic!("typecheck for closurized expression failed!"),
+            }
+        }
+        RawExpr::ArrayGet { array, index } => {
+            let type_array = get_type(array);
+            let type_index = get_type(index);
+            if type_index != Type::Int {
+                panic!("typecheck for closurized expression failed!")
+            }
+            match type_array {
+                Type::Array(elm) => *elm,
+                _ => panic!("typecheck for closurized expression failed!"),
+            }
+        }
+        RawExpr::ArrayPut {
+            array,
+            index,
+            value,
+        } => {
+            let type_array = get_type(array);
+            let type_index = get_type(index);
+            let type_value = get_type(value);
+            if type_index != Type::Int {
+                panic!("typecheck for closurized expression failed!")
+            }
+            let actual_type_value = match type_array {
+                Type::Array(elm) => *elm,
+                _ => panic!("typecheck for closurized expression failed!"),
+            };
+            if type_value != actual_type_value {
+                panic!("typecheck for closurized expression failed!")
+            }
+            Type::Unit
+        }
+        RawExpr::ExtArray { array } => get_type(array),
+    }
+}
+
+fn typecheck_function(
+    function: &Function,
+    env: &HashMap<String, Type>,
+    freevars_dict: &HashMap<String, Vec<String>>,
+) {
+    let get_type = |id| env.get(id).unwrap().clone();
+    let mut scope: HashSet<String> = HashSet::new();
+    let type_tag = env.get(&function.tag).unwrap().clone();
+    // 自由変数がある場合、クロージャーとみなし、scope に自分自身を入れる
+    if !freevars_dict.get(&function.tag).unwrap().is_empty() {
+        scope.insert(function.tag.clone());
+    }
+    let actual_type_args: Vec<_> = function.args.iter().map(|arg| get_type(arg)).collect();
+    function.args.iter().for_each(|arg| {
+        if !scope.insert(arg.clone()) {
+            panic!("typecheck for closurized expression failed!")
+        }
+    });
+    function.free_vars.iter().for_each(|var| {
+        if !scope.insert(var.clone()) {
+            panic!("typecheck for closurized expression failed!")
+        }
+    });
+    let type_ret = match type_tag {
+        Type::Fun(args, ret) => {
+            if args != actual_type_args {
+                panic!("typecheck for closurized expression failed!")
+            }
+            *ret
+        }
+        _ => panic!("typecheck for closurized expression failed!"),
+    };
+    let actual_type_ret = typecheck_expr(&function.body, env, &mut scope, freevars_dict);
+    if type_ret != actual_type_ret {
+        panic!("typecheck for closurized expression failed!")
+    }
+}
+
+pub fn typecheck(expr: &Expr, env: &HashMap<String, Type>, toplevels: &Vec<Function>) {
+    let mut freevars_dict = HashMap::<String, Vec<String>>::new();
+    for function in toplevels {
+        freevars_dict.insert(function.tag.clone(), function.free_vars.clone());
+    }
+    let mut scope = HashSet::new();
+    typecheck_expr(expr, env, &mut scope, &freevars_dict);
+    if !scope.is_empty() {
+        panic!("typecheck for closurized expression failed!")
+    }
+    for function in toplevels {
+        typecheck_function(function, env, &freevars_dict)
+    }
+    log::info!("Closure typecheck finished");
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::closurize::*;
+    #[test]
+    #[should_panic]
+    fn applycls_on_dir() {
+        let wrap = |x| Box::new(Spanned::new(x, (0, 0)));
+        let expr1 = *wrap(RawExpr::LetIn {
+            id: "x".to_string(),
+            exp_id: wrap(RawExpr::Int(1)),
+            exp_suc: wrap(RawExpr::ApplyCls {
+                cls: "f".to_string(),
+                args: vec!["x".to_string()],
+            }),
+        });
+        let mut env = HashMap::new();
+        env.insert(
+            "f".to_string(),
+            Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
+        );
+        env.insert("x".to_string(), Type::Int);
+        let mut scope = HashSet::new();
+        let mut freevars_dict = HashMap::new();
+        freevars_dict.insert("f".to_string(), vec![]);
+        typecheck_expr(&expr1, &env, &mut scope, &freevars_dict);
+    }
+
+    #[test]
+    #[should_panic]
+    fn applydir_on_cls() {
+        let wrap = |x| Box::new(Spanned::new(x, (0, 0)));
+        let expr2 = *wrap(RawExpr::LetIn {
+            id: "x".to_string(),
+            exp_id: wrap(RawExpr::Int(1)),
+            exp_suc: wrap(RawExpr::LetIn {
+                id: "y".to_string(),
+                exp_id: wrap(RawExpr::Float(2.0)),
+                exp_suc: wrap(RawExpr::LetIn {
+                    id: "f".to_string(),
+                    exp_id: wrap(RawExpr::NewClosure {
+                        tag: "f".to_string(),
+                        free_vars: vec!["y".to_string()],
+                    }),
+                    exp_suc: wrap(RawExpr::ApplyCls {
+                        cls: "f".to_string(),
+                        args: vec!["x".to_string()],
+                    }),
+                }),
+            }),
+        });
+        let mut env = HashMap::new();
+        env.insert(
+            "f".to_string(),
+            Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
+        );
+        env.insert("x".to_string(), Type::Int);
+        env.insert("y".to_string(), Type::Float);
+        let mut scope = HashSet::new();
+        let mut freevars_dict = HashMap::new();
+        freevars_dict.insert("f".to_string(), vec![]);
+        typecheck_expr(&expr2, &env, &mut scope, &freevars_dict);
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_closure() {
+        let wrap = |x| Box::new(Spanned::new(x, (0, 0)));
+        let expr3 = *wrap(RawExpr::LetIn {
+            id: "x".to_string(),
+            exp_id: wrap(RawExpr::Int(1)),
+            exp_suc: wrap(RawExpr::LetIn {
+                id: "y".to_string(),
+                exp_id: wrap(RawExpr::Float(2.0)),
+                exp_suc: wrap(RawExpr::LetIn {
+                    id: "f".to_string(),
+                    exp_id: wrap(RawExpr::NewClosure {
+                        tag: "f".to_string(),
+                        free_vars: vec!["z".to_string()],
+                    }),
+                    exp_suc: wrap(RawExpr::ApplyCls {
+                        cls: "f".to_string(),
+                        args: vec!["x".to_string()],
+                    }),
+                }),
+            }),
+        });
+        let mut env = HashMap::new();
+        env.insert(
+            "f".to_string(),
+            Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
+        );
+        env.insert("x".to_string(), Type::Int);
+        env.insert("y".to_string(), Type::Float);
+        let mut scope = HashSet::new();
+        let mut freevars_dict = HashMap::new();
+        freevars_dict.insert("f".to_string(), vec!["y".to_string()]);
+        assert_eq!(
+            typecheck_expr(&expr3, &env, &mut scope, &freevars_dict),
+            Type::Unit
+        );
+    }
+
+    #[test]
+    fn applycls_on_cls() {
+        let wrap = |x| Box::new(Spanned::new(x, (0, 0)));
+        let expr3 = *wrap(RawExpr::LetIn {
+            id: "x".to_string(),
+            exp_id: wrap(RawExpr::Int(1)),
+            exp_suc: wrap(RawExpr::LetIn {
+                id: "y".to_string(),
+                exp_id: wrap(RawExpr::Float(2.0)),
+                exp_suc: wrap(RawExpr::LetIn {
+                    id: "f".to_string(),
+                    exp_id: wrap(RawExpr::NewClosure {
+                        tag: "f".to_string(),
+                        free_vars: vec!["y".to_string()],
+                    }),
+                    exp_suc: wrap(RawExpr::ApplyCls {
+                        cls: "f".to_string(),
+                        args: vec!["x".to_string()],
+                    }),
+                }),
+            }),
+        });
+        let mut env = HashMap::new();
+        env.insert(
+            "f".to_string(),
+            Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
+        );
+        env.insert("x".to_string(), Type::Int);
+        env.insert("y".to_string(), Type::Float);
+        let mut scope = HashSet::new();
+        let mut freevars_dict = HashMap::new();
+        freevars_dict.insert("f".to_string(), vec!["y".to_string()]);
+        assert_eq!(
+            typecheck_expr(&expr3, &env, &mut scope, &freevars_dict),
+            Type::Unit
+        );
+    }
+}

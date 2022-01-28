@@ -29,6 +29,18 @@ fn insert_let<F: FnOnce(String) -> RawExpr>(
     Box::new(Spanned::new(raw_expr, expr_span))
 }
 
+// t に含まれる Bool 型を Int 型に変える
+fn sanitize_bool(t: Type) -> Type{
+    match t {
+        Type::Unit => Type::Unit,
+        Type::Bool | Type::Int => Type::Int,
+        Type::Float => Type::Float,
+        Type::Fun(args, ret) => Type::Fun(args.into_iter().map(|arg| sanitize_bool(arg)).collect(), Box::new(sanitize_bool(*ret))),
+        Type::Tuple(elms) => Type::Tuple(elms.into_iter().map(|elm| sanitize_bool(elm)).collect()),
+        Type::Array(elm) => Type::Array(Box::new(sanitize_bool(*elm))),
+    }
+}
+
 /// syntax::Expr 型の式を受け取り、knormal::Expr 型の式とその型をペアで返す
 /// この際、式中の変数名はかぶらないようにα変換された上で、各変数の型を env に登録していく
 fn convert_expr(
@@ -74,11 +86,9 @@ fn convert_expr(
                 insert_let(
                     k_exp,
                     env,
-                    Box::new(|id| {
-                        RawExpr::UnOp {
-                            op: k_op.clone(),
-                            id,
-                        }
+                    Box::new(|id| RawExpr::UnOp {
+                        op: k_op.clone(),
+                        id,
                     }),
                 ),
                 res_type,
@@ -123,7 +133,7 @@ fn convert_expr(
                     | syntax::BinaryOp::FSub
                     | syntax::BinaryOp::FMul
                     | syntax::BinaryOp::FDiv => Type::Float,
-                    syntax::BinaryOp::Eq | syntax::BinaryOp::LEq => Type::Bool,
+                    syntax::BinaryOp::Eq | syntax::BinaryOp::LEq => unreachable!(),
                 };
                 let env = Rc::new(RefCell::new(env));
                 (
@@ -215,13 +225,12 @@ fn convert_expr(
             } if op == syntax::BinaryOp::Eq || op == syntax::BinaryOp::LEq => {
                 let k_exp_left = convert_expr(*exp_left, env, alpha, extenv);
                 let k_exp_right = convert_expr(*exp_right, env, alpha, extenv);
-                let if_type = k_exp_left.1.clone();
                 let k_op = match op {
                     syntax::BinaryOp::Eq => CondOp::Eq,
                     syntax::BinaryOp::LEq => CondOp::LEq,
                     _ => unreachable!(),
                 };
-                let (exp_then, _) = convert_expr(*exp_then, env, alpha, extenv);
+                let (exp_then, then_type) = convert_expr(*exp_then, env, alpha, extenv);
                 let (exp_else, _) = convert_expr(*exp_else, env, alpha, extenv);
                 let env = Rc::new(RefCell::new(env));
                 (
@@ -243,7 +252,7 @@ fn convert_expr(
                             .item
                         }),
                     ),
-                    if_type,
+                    then_type,
                 )
             }
             cond_item => convert_expr(
@@ -291,22 +300,28 @@ fn convert_expr(
         } => {
             let old_fun_name = fun.item.name;
             let new_fun_name = generate_id(&old_fun_name);
-            env.insert(new_fun_name.clone(), fun.item.t.to_type().unwrap());
+            // fun の型を仮に代入する
+            env.insert(new_fun_name.clone(), sanitize_bool(fun.item.t.to_type().unwrap()));
             let alpha_key = alpha.entry(old_fun_name.clone()).or_insert(vec![]);
             alpha_key.push(new_fun_name.clone());
             let (exp_suc, type_suc) = convert_expr(*exp_suc, env, alpha, extenv);
             let mut old_arg_names = vec![];
             let mut new_arg_names = vec![];
+            let mut arg_types = vec![];
             args.into_iter().for_each(|arg| {
                 let old_arg_name = arg.item.name;
                 let new_arg_name = generate_id(&old_arg_name);
-                env.insert(new_arg_name.clone(), arg.item.t.to_type().unwrap());
+                env.insert(new_arg_name.clone(), sanitize_bool(arg.item.t.clone().to_type().unwrap()));
                 let alpha_key = alpha.entry(old_arg_name.clone()).or_insert(vec![]);
                 alpha_key.push(new_arg_name.clone());
                 old_arg_names.push(old_arg_name);
                 new_arg_names.push(new_arg_name);
+                arg_types.push(sanitize_bool(arg.item.t.to_type().unwrap()));
             });
-            let (exp_fun, _) = convert_expr(*exp_fun, env, alpha, extenv);
+            let (exp_fun, fun_ret_type) = convert_expr(*exp_fun, env, alpha, extenv);
+            // 実際の型を後に代入 (Bool が戻り値の時などは、こうしないとバグる)
+            let fun_type = Type::Fun(arg_types, Box::new(fun_ret_type));
+            env.insert(new_fun_name.clone(), fun_type);
             alpha.get_mut(&old_fun_name).unwrap().pop();
             old_arg_names.into_iter().for_each(|old_arg_name| {
                 alpha.get_mut(&old_arg_name).unwrap().pop();
@@ -332,12 +347,19 @@ fn convert_expr(
                 .map(|elm| {
                     let old_elm_name = elm.item.name.clone();
                     let new_elm_name = generate_id(&old_elm_name);
-                    env.insert(new_elm_name.clone(), elm.item.t.clone().to_type().unwrap());
+                    // 仮の型を代入
+                    //env.insert(new_elm_name.clone(), elm.item.t.clone().to_type().unwrap());
                     let alpha_key = alpha.entry(old_elm_name.clone()).or_insert(vec![]);
                     alpha_key.push(new_elm_name.clone());
                     new_elm_name
                 })
                 .collect();
+            let elm_types = match &k_exp_var.1 {
+                Type::Tuple(elm_types) => elm_types,
+                _ => panic!("internal compiler error")
+            };
+            // 正しい型を代入
+            renamed_vars.iter().zip(elm_types).for_each(|(elm, t)| {env.insert(elm.clone(), t.clone());});
             let k_exp_suc = convert_expr(*exp_suc, env, alpha, extenv);
             vars.iter().for_each(|elm| {
                 let old_elm_name = elm.item.name.clone();
@@ -388,6 +410,7 @@ fn convert_expr(
                     .item
                 })
             })(vec![]));
+            tuple_types.reverse();
             (exp_result, Type::Tuple(tuple_types))
         }
         syntax::RawExpr::NewArray { size, value } => {
@@ -494,7 +517,7 @@ fn convert_expr(
                 let var_type = extenv.get(&id).unwrap().clone();
                 (
                     wrap(RawExpr::ExtArray { array: id }),
-                    var_type.to_type().unwrap(),
+                    sanitize_bool(var_type.to_type().unwrap()),
                 )
             }
         }
@@ -508,5 +531,8 @@ pub fn k_normalize(
     let mut env = HashMap::new();
     let mut alpha = HashMap::new();
     let (expr, _) = convert_expr(expr, &mut env, &mut alpha, extenv);
+    for (name, t) in extenv.iter() {
+        env.insert(name.clone(), sanitize_bool(t.clone().to_type().unwrap()));
+    }
     (*expr, env)
 }

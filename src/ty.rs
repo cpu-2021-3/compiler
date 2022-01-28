@@ -1,5 +1,9 @@
 use anyhow::Result;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{self},
+    rc::Rc,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VarType {
@@ -55,4 +59,35 @@ pub enum Type {
     Fun(Vec<Type>, Box<Type>),
     Tuple(Vec<Type>),
     Array(Box<Type>),
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Unit => write!(f, "unit"),
+            Type::Bool => write!(f, "bool"),
+            Type::Int => write!(f, "int"),
+            Type::Float => write!(f, "float"),
+            Type::Fun(args, res) => {
+                write!(f, "(")?;
+                for arg in args {
+                    arg.fmt(f)?;
+                }
+                write!(f, ") -> ")?;
+                res.fmt(f)
+            }
+            Type::Tuple(elms) => {
+                for (index, elm) in elms.iter().enumerate() {
+                    write!(f, "{elm}")?;
+                    if index + 1 != elms.len() {
+                        write!(f, " * ")?;
+                    }
+                }
+                Ok(())
+            }
+            Type::Array(elm) => {
+                write!(f, "{elm} list")
+            }
+        }
+    }
 }

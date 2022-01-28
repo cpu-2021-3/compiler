@@ -17,6 +17,8 @@ pub mod typing;
 use std::{env, fs};
 
 fn main() {
+    simple_logger::init().unwrap();
+
     let args: Vec<String> = env::args().collect();
 
     let filename = &args[1];
@@ -34,6 +36,8 @@ fn main() {
     let (k_normalized, k_env) = knormalize::k_normalize(syntax_expr, &extenv);
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
-    println!("{:#?}", closurized);
-    println!("{:#?}", toplevels);
+    closurize::typecheck(&closurized, &k_env, &toplevels);
+    println!("{:#?}", k_env);
+    //println!("{:#?}", closurized);
+    //println!("{:#?}", toplevels);
 }
