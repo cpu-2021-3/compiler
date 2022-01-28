@@ -1,5 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
 use anyhow::Result;
+use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VarType {
@@ -26,14 +26,21 @@ impl VarType {
             VarType::Bool => Type::Bool,
             VarType::Int => Type::Int,
             VarType::Float => Type::Float,
-            VarType::Fun(args, ret) => 
-            Type::Fun(args.into_iter().map(|arg| arg.to_type()).collect::<Result<_, _>>()?, Box::new(ret.to_type()?)),
-            VarType::Tuple(elms) => 
-            Type::Tuple(elms.into_iter().map(|elm| elm.to_type()).collect::<Result<_, _>>()?),
+            VarType::Fun(args, ret) => Type::Fun(
+                args.into_iter()
+                    .map(|arg| arg.to_type())
+                    .collect::<Result<_, _>>()?,
+                Box::new(ret.to_type()?),
+            ),
+            VarType::Tuple(elms) => Type::Tuple(
+                elms.into_iter()
+                    .map(|elm| elm.to_type())
+                    .collect::<Result<_, _>>()?,
+            ),
             VarType::Array(elm) => Type::Array(Box::new(elm.to_type()?)),
             VarType::Var(_) => {
                 return Err(anyhow::anyhow!("undecided type detected"));
-            },
+            }
         };
         Ok(result)
     }

@@ -1,6 +1,10 @@
+//#![warn(clippy::pedantic, clippy::nursery)]
+
 #[macro_use]
 extern crate lalrpop_util;
 extern crate global_counter;
+pub mod closure;
+pub mod closurize;
 pub mod id;
 pub mod knormal;
 pub mod knormalize;
@@ -18,18 +22,18 @@ fn main() {
     let filename = &args[1];
     let source_code = fs::read_to_string(filename).expect("error reading file");
 
-    //let source_code = "let rec f x = if x >= 0 then (f (x-1)) else () in print_float (-1.0)".to_string();
-
     let expr = parse::parse(&source_code);
-    let typed = match typing::do_typing(*expr) {
+    let (syntax_expr, extenv) = match typing::do_typing(*expr) {
         Ok(elm) => elm,
         Err(err) => {
             println!("{}", err.message(&source_code));
             panic!("{}", err);
         }
     };
-    //println!("{:?}", typed.0);
-    //println!("{:?}", typed.1);
-    let k_normalized = knormalize::k_normalize(typed.0, &typed.1);
-    //println!("{:#?}", k_normalized);
+
+    let (k_normalized, k_env) = knormalize::k_normalize(syntax_expr, &extenv);
+
+    let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
+    println!("{:#?}", closurized);
+    println!("{:#?}", toplevels);
 }

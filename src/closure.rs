@@ -1,6 +1,5 @@
 use crate::span::Spanned;
 
-/// K 正規化された構文木
 #[derive(Debug)]
 pub enum RawExpr {
     Unit,
@@ -28,17 +27,19 @@ pub enum RawExpr {
         exp_id: Box<Expr>,
         exp_suc: Box<Expr>,
     },
-    LetRecIn {
-        fun: String,
+    ApplyCls {
+        cls: String,
         args: Vec<String>,
-        exp_fun: Box<Expr>,
-        exp_suc: Box<Expr>,
     },
-    Apply {
-        fun: String,
+    ApplyDir {
+        tag: String,
         args: Vec<String>,
     },
     NewTuple(Vec<String>),
+    NewClosure {
+        tag: String,
+        free_vars: Vec<String>,
+    },
     TupleGet {
         tuple: String,
         index: usize,
@@ -55,10 +56,14 @@ pub enum RawExpr {
     ExtArray {
         array: String,
     },
-    ExtApply {
-        fun: String,
-        args: Vec<String>,
-    },
+}
+
+#[derive(Debug)]
+pub struct Function {
+    pub tag: String,
+    pub args: Vec<String>,
+    pub free_vars: Vec<String>,
+    pub body: Expr,
 }
 
 pub type Expr = Spanned<RawExpr>;
