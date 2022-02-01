@@ -17,29 +17,12 @@ impl<T> Spanned<T> {
 use std::fmt;
 
 pub struct LineColumn {
-    line: usize,
-    column: usize,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl fmt::Display for LineColumn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "L{}, C{}", self.line, self.column)
     }
-}
-
-// ソースコードと文字数から、行数とカラム数を得る
-pub fn get_line_column(source_code: &str, position: usize) -> LineColumn {
-    let line = source_code[0..position]
-        .chars()
-        .into_iter()
-        .filter(|x| *x == '\n')
-        .count()
-        + 1;
-    let column = position
-        - match source_code[0..position].rfind('\n') {
-            Some(offset) => offset + 1,
-            None => 0,
-        }
-        + 1;
-    LineColumn { line, column }
 }

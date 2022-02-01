@@ -1,6 +1,6 @@
 lalrpop_mod!(pub mincaml);
 
-use crate::span::get_line_column;
+use crate::code::line_column;
 use crate::syntax::Expr;
 use crate::ty::VarType;
 use lalrpop_util::ParseError::*;
@@ -9,7 +9,7 @@ pub fn parse(source_code: &str) -> Box<Expr<VarType>> {
     match mincaml::ExprParser::new().parse(source_code) {
         Ok(result) => result,
         Err(parse_error) => {
-            let lc = |position| get_line_column(source_code, position);
+            let lc = |position| line_column(position);
             match parse_error {
                 InvalidToken { location } => {
                     panic!("syntax error: invalid token in {}", lc(location));

@@ -90,6 +90,7 @@ dependencies = [
  "lalrpop",
  "lalrpop-util",
  "log",
+ "once_cell",
  "regex",
  "simple_logger",
  "thiserror",
