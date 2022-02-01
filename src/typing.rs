@@ -1,44 +1,42 @@
 use std::collections::HashMap;
 
-use crate::{span::*, code};
 use crate::syntax::RawExpr::*;
 use crate::syntax::{BinaryOp::*, Expr, RawTypedVar, TypedVar, UnaryOp::*};
 use crate::ty::VarType;
+use crate::{code, span::*};
 use anyhow::Result;
 use std::{cell::RefCell, rc::Rc};
-use thiserror::Error;
 
 #[derive(Debug)]
 pub enum TypingError {
-    //#[error("the expression in `{span:?}` should be `{should_be:?}`, but is `{but_is:?}`")]
     WrongType {
         span: Span,
         should_be: VarType,
         but_is: VarType,
     },
-    //#[error("the expression in `{span1:?}` is `{t1:?}`, but the expression in `{span2:?}` is `{t2:?}`, where they should be equal")]
     UnequalType {
         span1: Span,
         span2: Span,
         t1: VarType,
         t2: VarType,
     },
-    //#[error("the expression in `{span:?}` has a recursive type")]
-    Recursive { span: Span },
+    Recursive {
+        span: Span,
+    },
 }
 
 impl TypingError {
     pub fn message(&self) -> String {
         let frag = match self {
-            TypingError::WrongType { span, .. } => (
-                code::indexed_fragment(span)
-            ),
-            TypingError::UnequalType { span1, span2, .. } => (
-                format!("{} and {}" ,code::indexed_fragment(span1), code::indexed_fragment(span2))
-            ),
-            TypingError::Recursive { span } => (
-                code::indexed_fragment(span)
-            ),
+            TypingError::WrongType { span, .. } => (code::indexed_fragment(span)),
+            TypingError::UnequalType { span1, span2, .. } => {
+                format!(
+                    "{} and {}",
+                    code::indexed_fragment(span1),
+                    code::indexed_fragment(span2)
+                )
+            }
+            TypingError::Recursive { span } => (code::indexed_fragment(span)),
         };
         format!("type error: {}", frag)
     }

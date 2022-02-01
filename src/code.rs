@@ -11,7 +11,12 @@ pub fn fragment(span: &Span) -> String {
 
 // ソースコード中の部分文字列と行・カラム数を返す
 pub fn indexed_fragment(span: &Span) -> String {
-    format!("{} (from {} to {})", fragment(span), line_column(span.0), line_column(span.1))
+    format!(
+        "{} (from {} to {})",
+        fragment(span),
+        line_column(span.0),
+        line_column(span.1)
+    )
 }
 
 // ソースコード中の位置に対応する行数とカラム数を返す

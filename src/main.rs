@@ -3,10 +3,10 @@
 #[macro_use]
 extern crate lalrpop_util;
 extern crate global_counter;
-pub mod code;
-pub mod compile;
 pub mod closure;
 pub mod closurize;
+pub mod code;
+pub mod compile;
 pub mod id;
 pub mod knormal;
 pub mod knormalize;

@@ -1,9 +1,11 @@
 use std::fs;
 
-use crate::{code, parse, typing, knormalize, closurize};
+use crate::{closurize, code, knormalize, parse, typing};
 
 pub fn compile(filename: &String) {
-    code::SOURCE_CODE.set(fs::read_to_string(filename).unwrap()).unwrap();
+    code::SOURCE_CODE
+        .set(fs::read_to_string(filename).unwrap())
+        .unwrap();
 
     let expr = parse::parse(code::SOURCE_CODE.get().unwrap());
     let (syntax_expr, extenv) = match typing::do_typing(*expr) {
