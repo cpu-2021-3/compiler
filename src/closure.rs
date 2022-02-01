@@ -1,3 +1,4 @@
+use crate::knormal::{BinaryOp, CondOp, UnaryOp};
 use crate::span::Spanned;
 
 #[derive(Debug)]
@@ -67,27 +68,3 @@ pub struct Function {
 }
 
 pub type Expr = Spanned<RawExpr>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum UnaryOp {
-    Neg,
-    FNeg,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    FAdd,
-    FSub,
-    FMul,
-    FDiv,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CondOp {
-    Eq,
-    LEq,
-}

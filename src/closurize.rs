@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::knormal::{BinaryOp, CondOp, UnaryOp};
 use crate::{closure::*, knormal, span::Spanned, ty::Type};
 
 fn free_vars(expr: &RawExpr) -> HashSet<String> {
@@ -78,10 +79,7 @@ fn convert_expr(
         knormal::RawExpr::Float(float) => wrap(RawExpr::Float(*float)),
         knormal::RawExpr::Var(id) => wrap(RawExpr::Var(id.clone())),
         knormal::RawExpr::UnOp { op, id } => wrap(RawExpr::UnOp {
-            op: match op {
-                knormal::UnaryOp::Neg => UnaryOp::Neg,
-                knormal::UnaryOp::FNeg => UnaryOp::FNeg,
-            },
+            op: op.clone(),
             id: id.clone(),
         }),
         knormal::RawExpr::BiOp {
@@ -90,16 +88,7 @@ fn convert_expr(
             id_right,
         } => wrap(RawExpr::BiOp {
             id_left: id_left.clone(),
-            op: match op {
-                knormal::BinaryOp::Add => BinaryOp::Add,
-                knormal::BinaryOp::Sub => BinaryOp::Sub,
-                knormal::BinaryOp::Mul => BinaryOp::Mul,
-                knormal::BinaryOp::Div => BinaryOp::Div,
-                knormal::BinaryOp::FAdd => BinaryOp::FAdd,
-                knormal::BinaryOp::FSub => BinaryOp::FSub,
-                knormal::BinaryOp::FMul => BinaryOp::FMul,
-                knormal::BinaryOp::FDiv => BinaryOp::FDiv,
-            },
+            op: op.clone(),
             id_right: id_right.clone(),
         }),
         knormal::RawExpr::If {
@@ -113,13 +102,9 @@ fn convert_expr(
             let (exp_else, top_else) = convert_expr(exp_else, env, direct_funs);
             toplevels.extend(top_then);
             toplevels.extend(top_else);
-            let op = match op {
-                knormal::CondOp::Eq => CondOp::Eq,
-                knormal::CondOp::LEq => CondOp::LEq,
-            };
             wrap(RawExpr::If {
                 id_left: id_left.clone(),
-                op,
+                op: op.clone(),
                 id_right: id_right.clone(),
                 exp_then,
                 exp_else,
@@ -289,7 +274,12 @@ fn typecheck_expr(
             id_right,
         } => {
             let res = match op {
-                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => Type::Int,
+                BinaryOp::Add
+                | BinaryOp::Sub
+                | BinaryOp::Mul
+                | BinaryOp::Div
+                | BinaryOp::LShift
+                | BinaryOp::RShift => Type::Int,
                 BinaryOp::FAdd | BinaryOp::FSub | BinaryOp::FMul | BinaryOp::FDiv => Type::Float,
             };
             let actual_left = get_type(id_left);

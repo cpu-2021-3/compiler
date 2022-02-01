@@ -79,6 +79,8 @@ pub enum BinaryOp {
     FSub,
     FMul,
     FDiv,
+    LShift,
+    RShift,
 }
 
 #[derive(Debug, Clone, PartialEq)]

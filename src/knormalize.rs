@@ -30,12 +30,15 @@ fn insert_let<F: FnOnce(String) -> RawExpr>(
 }
 
 // t に含まれる Bool 型を Int 型に変える
-fn sanitize_bool(t: Type) -> Type{
+fn sanitize_bool(t: Type) -> Type {
     match t {
         Type::Unit => Type::Unit,
         Type::Bool | Type::Int => Type::Int,
         Type::Float => Type::Float,
-        Type::Fun(args, ret) => Type::Fun(args.into_iter().map(|arg| sanitize_bool(arg)).collect(), Box::new(sanitize_bool(*ret))),
+        Type::Fun(args, ret) => Type::Fun(
+            args.into_iter().map(|arg| sanitize_bool(arg)).collect(),
+            Box::new(sanitize_bool(*ret)),
+        ),
         Type::Tuple(elms) => Type::Tuple(elms.into_iter().map(|elm| sanitize_bool(elm)).collect()),
         Type::Array(elm) => Type::Array(Box::new(sanitize_bool(*elm))),
     }
@@ -301,7 +304,10 @@ fn convert_expr(
             let old_fun_name = fun.item.name;
             let new_fun_name = generate_id(&old_fun_name);
             // fun の型を仮に代入する
-            env.insert(new_fun_name.clone(), sanitize_bool(fun.item.t.to_type().unwrap()));
+            env.insert(
+                new_fun_name.clone(),
+                sanitize_bool(fun.item.t.to_type().unwrap()),
+            );
             let alpha_key = alpha.entry(old_fun_name.clone()).or_insert(vec![]);
             alpha_key.push(new_fun_name.clone());
             let (exp_suc, type_suc) = convert_expr(*exp_suc, env, alpha, extenv);
@@ -311,7 +317,10 @@ fn convert_expr(
             args.into_iter().for_each(|arg| {
                 let old_arg_name = arg.item.name;
                 let new_arg_name = generate_id(&old_arg_name);
-                env.insert(new_arg_name.clone(), sanitize_bool(arg.item.t.clone().to_type().unwrap()));
+                env.insert(
+                    new_arg_name.clone(),
+                    sanitize_bool(arg.item.t.clone().to_type().unwrap()),
+                );
                 let alpha_key = alpha.entry(old_arg_name.clone()).or_insert(vec![]);
                 alpha_key.push(new_arg_name.clone());
                 old_arg_names.push(old_arg_name);
@@ -356,10 +365,12 @@ fn convert_expr(
                 .collect();
             let elm_types = match &k_exp_var.1 {
                 Type::Tuple(elm_types) => elm_types,
-                _ => panic!("internal compiler error")
+                _ => panic!("internal compiler error"),
             };
             // 正しい型を代入
-            renamed_vars.iter().zip(elm_types).for_each(|(elm, t)| {env.insert(elm.clone(), t.clone());});
+            renamed_vars.iter().zip(elm_types).for_each(|(elm, t)| {
+                env.insert(elm.clone(), t.clone());
+            });
             let k_exp_suc = convert_expr(*exp_suc, env, alpha, extenv);
             vars.iter().for_each(|elm| {
                 let old_elm_name = elm.item.name.clone();
