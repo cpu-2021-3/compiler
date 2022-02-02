@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::{closurize, code, knormalize, parse, typing};
+use crate::{closurize, code, knormalize, parse, riscv, typing};
 
 pub fn compile(filename: &String) {
     code::SOURCE_CODE
@@ -16,11 +16,14 @@ pub fn compile(filename: &String) {
         }
     };
 
-    let (k_normalized, k_env) = knormalize::k_normalize(syntax_expr, &extenv);
+    let (k_normalized, mut k_env) = knormalize::k_normalize(syntax_expr, &extenv);
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
     closurize::typecheck(&closurized, &k_env, &toplevels);
-    //println!("{:#?}", k_env);
-    //println!("{:#?}", closurized);
-    //println!("{:#?}", toplevels);
+
+    let functions = riscv::specify::specify(closurized, toplevels, &mut k_env);
+
+    for function in functions {
+        println!("{function}");
+    }
 }

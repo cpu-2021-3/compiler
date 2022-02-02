@@ -99,14 +99,16 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
                 _ => panic!("internal compiler error"),
             };
             // 先頭から index 要素目のタプルが何 byte 目に位置するか計算
-            let offset = elm_types[0..index].iter().map(|elm_type| {
-                match elm_type {
+            let offset = elm_types[0..index]
+                .iter()
+                .map(|elm_type| match elm_type {
                     Type::Unit => 0usize,
                     Type::Float => FLOAT_BYTES_EXP,
-                    _ => INT_BYTES_EXP
-                }
-            }).sum::<usize>().try_into()
-            .unwrap();
+                    _ => INT_BYTES_EXP,
+                })
+                .sum::<usize>()
+                .try_into()
+                .unwrap();
             wrap_instr(RawInstr::Read {
                 address: tuple,
                 offset,
@@ -215,14 +217,37 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
                             instr_suc: wrap_instr(RawInstr::Write {
                                 address: address_id,
                                 offset: 0,
-                                value
+                                value,
                             }),
                         }),
                     }),
                 };
                 wrap_expr(whole_expr)
             }
-        },
+        }
         closure::RawExpr::ExtArray { array } => wrap_instr(RawInstr::DataTag(array)),
     }
+}
+
+pub fn specify(
+    expr: closure::Expr,
+    toplevels: Vec<closure::Function>,
+    env: &mut HashMap<String, Type>,
+) -> Vec<Function> {
+    let mut functions: Vec<Function> = vec![];
+    toplevels.into_iter().for_each(|toplevel| {
+        functions.push(Function {
+            tag: toplevel.tag,
+            args: toplevel.args,
+            free_vars: toplevel.free_vars,
+            body: convert_expr(toplevel.body, env),
+        });
+    });
+    functions.push(Function {
+        tag: "min_caml_start".to_string(),
+        args: vec![],
+        free_vars: vec![],
+        body: convert_expr(expr, env),
+    });
+    functions
 }

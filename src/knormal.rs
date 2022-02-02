@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::span::Spanned;
 
 /// K 正規化された構文木
@@ -69,6 +71,15 @@ pub enum UnaryOp {
     FNeg,
 }
 
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryOp::Neg => write!(f, "-"),
+            UnaryOp::FNeg => write!(f, "-."),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     Add,
@@ -83,8 +94,34 @@ pub enum BinaryOp {
     RShift,
 }
 
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Sub => write!(f, "-"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Div => write!(f, "/"),
+            BinaryOp::FAdd => write!(f, "+."),
+            BinaryOp::FSub => write!(f, "-."),
+            BinaryOp::FMul => write!(f, "*."),
+            BinaryOp::FDiv => write!(f, "/."),
+            BinaryOp::LShift => write!(f, "<<"),
+            BinaryOp::RShift => write!(f, ">>"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CondOp {
     Eq,
     LEq,
+}
+
+impl fmt::Display for CondOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CondOp::Eq => write!(f, "="),
+            CondOp::LEq => write!(f, "<="),
+        }
+    }
 }
