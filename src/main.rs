@@ -11,6 +11,7 @@ pub mod id;
 pub mod knormal;
 pub mod knormalize;
 pub mod parse;
+pub mod riscv;
 pub mod span;
 pub mod syntax;
 pub mod ty;
