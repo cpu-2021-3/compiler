@@ -25,10 +25,25 @@ pub enum RawInstr {
         op: BinaryOp,
         id_right: String,
     },
+    BiImm {
+        id_left: String,
+        op: BinaryOp,
+        imm: i32,
+    },
+    FCondOp {
+        id_left: String,
+        op: CondOp,
+        id_right: String,
+    },
     If {
         id_left: String,
         op: CondOp,
         id_right: String,
+        exp_then: Box<Expr>,
+        exp_else: Box<Expr>,
+    },
+    IfZero {
+        id: String,
         exp_then: Box<Expr>,
         exp_else: Box<Expr>,
     },
@@ -71,6 +86,12 @@ impl fmt::Display for RawInstr {
                 op,
                 id_right,
             } => write!(f, "{} {} {}", id_left, op, id_right),
+            RawInstr::BiImm { id_left, op, imm } => write!(f, "{} {} {}", id_left, op, imm),
+            RawInstr::FCondOp {
+                id_left,
+                op,
+                id_right,
+            } => write!(f, "{} {} {}", id_left, op, id_right),
             RawInstr::If {
                 id_left,
                 op,
@@ -79,6 +100,16 @@ impl fmt::Display for RawInstr {
                 exp_else,
             } => {
                 write!(f, "if {} {} {} then\n", id_left, op, id_right)?;
+                exp_then.item.fmt(f)?;
+                write!(f, "\nelse\n")?;
+                exp_else.item.fmt(f)
+            }
+            RawInstr::IfZero {
+                id,
+                exp_then,
+                exp_else,
+            } => {
+                write!(f, "if {} = 0 then\n", id)?;
                 exp_then.item.fmt(f)?;
                 write!(f, "\nelse\n")?;
                 exp_else.item.fmt(f)

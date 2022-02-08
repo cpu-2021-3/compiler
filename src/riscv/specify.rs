@@ -57,13 +57,41 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
         } => {
             let exp_then = Box::new(convert_expr(*exp_then, env));
             let exp_else = Box::new(convert_expr(*exp_else, env));
-            wrap_instr(RawInstr::If {
-                id_left,
-                op,
-                id_right,
-                exp_then,
-                exp_else,
-            })
+            let id_type = env.get(&id_left).unwrap();
+            match id_type {
+                Type::Int => {
+                    // int の比較の場合は、beq/ble を使う
+                    wrap_instr(RawInstr::If {
+                        id_left,
+                        op,
+                        id_right,
+                        exp_then,
+                        exp_else,
+                    })
+                }
+                Type::Float => {
+                    // float の比較の場合は、feq/fle を変数に代入して beq を使う
+                    let compare_id = generate_id("cm");
+                    env.insert(compare_id.clone(), Type::Int);
+                    wrap_expr(RawExpr::LetIn {
+                        id: compare_id.clone(),
+                        instr_id: *wrap(RawInstr::FCondOp {
+                            id_left,
+                            op,
+                            id_right,
+                        }),
+                        instr_suc: wrap_instr(RawInstr::IfZero {
+                            id: compare_id,
+                            exp_then: exp_else,
+                            exp_else: exp_then,
+                        }),
+                    })
+                }
+                t => {
+                    log::error!("cannot compare values of type {t}");
+                    panic!("internal compiler error");
+                }
+            }
         }
         closure::RawExpr::Unit => wrap_instr(RawInstr::Unit),
         closure::RawExpr::Int(integer) => wrap_instr(RawInstr::Int(integer)),

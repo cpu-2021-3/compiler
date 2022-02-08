@@ -22,6 +22,7 @@ pub fn compile(filename: &String) {
     closurize::typecheck(&closurized, &k_env, &toplevels);
 
     let functions = riscv::specify::specify(closurized, toplevels, &mut k_env);
+    let functions = riscv::embed::embed(functions);
 
     for function in functions {
         println!("{function}");
