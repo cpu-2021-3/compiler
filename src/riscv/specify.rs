@@ -99,8 +99,7 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
         closure::RawExpr::Var(id) => {
             let instr = match env.get(&id).unwrap() {
                 Type::Unit => RawInstr::Unit,
-                Type::Float => RawInstr::VarF32(id),
-                _ => RawInstr::VarI32(id),
+                _ => RawInstr::Var(id),
             };
             wrap_instr(instr)
         }

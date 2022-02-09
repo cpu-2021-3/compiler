@@ -24,7 +24,9 @@ pub fn compile(filename: &String) {
     let functions = riscv::specify::specify(closurized, toplevels, &mut k_env);
     let functions = riscv::embed::embed(functions);
 
-    for function in functions {
-        println!("{function}");
-    }
+    // for function in functions {
+    //     println!("{function}");
+    // }
+
+    riscv::regalloc::do_register_allocation(functions);
 }

@@ -13,8 +13,7 @@ pub enum RawInstr {
     Unit,
     Int(i32),
     Float(f32),
-    VarI32(String),
-    VarF32(String),
+    Var(String),
     DataTag(String),
     UnOp {
         op: UnaryOp,
@@ -77,8 +76,7 @@ impl fmt::Display for RawInstr {
             RawInstr::Unit => write!(f, "()"),
             RawInstr::Int(integer) => write!(f, "{}", integer),
             RawInstr::Float(float) => write!(f, "{}", float),
-            RawInstr::VarI32(id) => write!(f, "{}", id),
-            RawInstr::VarF32(id) => write!(f, "{}.", id),
+            RawInstr::Var(id) => write!(f, "{}", id),
             RawInstr::DataTag(id) => write!(f, "{}!", id),
             RawInstr::UnOp { op, id } => write!(f, "{} {}", op, id),
             RawInstr::BiOp {
