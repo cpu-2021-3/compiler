@@ -28,5 +28,9 @@ pub fn compile(filename: &String) {
     //     println!("{function}");
     // }
 
-    riscv::regalloc::do_register_allocation(functions);
+    let functions = riscv::regalloc::do_register_allocation(functions);
+
+    for function in functions {
+        print!("{}", function);
+    }
 }
