@@ -480,7 +480,12 @@ pub fn do_typing(
     expr: Expr<VarType>,
 ) -> Result<(Expr<VarType>, HashMap<String, VarType>), TypingError> {
     let mut env = HashMap::new();
-    let mut extenv = HashMap::new();
+    let mut extenv = HashMap::from([
+        ("sqrt".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Float))),
+        ("float_of_int".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Float))),
+        ("int_of_float".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Int))),
+        ("print_char".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Unit))),
+    ]);
     unify_one_expr(&VarType::Unit, &expr, &mut env, &mut extenv)?;
     extenv.iter_mut().for_each(|(_name, t)| {
         *t = t.clone().solve();

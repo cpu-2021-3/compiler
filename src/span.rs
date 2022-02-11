@@ -2,7 +2,7 @@
 pub type Span = (usize, usize);
 
 /// 型 T に範囲情報が付加されたもの
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Spanned<T> {
     pub item: T,
     pub span: Span,

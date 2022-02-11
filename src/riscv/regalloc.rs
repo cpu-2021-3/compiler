@@ -6,6 +6,7 @@ use super::{specific::{Function, Expr, RawExpr, RawInstr, Instr}, asm::{Program,
 
 #[derive(Clone, Debug)]
 struct Graph {
+    verts: HashSet<String>,
     edges: HashSet<(String, String)>
 }
 
@@ -13,10 +14,12 @@ struct Graph {
 impl Graph {
     // 新しいグラフを生成
     fn new() -> Self {
-        Graph {edges: HashSet::new()}
+        Graph {verts: HashSet::new(), edges: HashSet::new()}
     }
     // u と v を辺でつなぐ
     fn add(&mut self, mut u: String, mut v: String) {
+        self.verts.insert(u.clone());
+        self.verts.insert(v.clone());
         if u == v {
             return;
         }
@@ -35,6 +38,9 @@ impl Graph {
     }
     // 別のグラフと合体する
     fn merge(&mut self, o: Graph) {
+        for vert in o.verts {
+            self.verts.insert(vert);
+        }
         for edge in o.edges {
             self.edges.insert(edge);
         }
@@ -42,9 +48,12 @@ impl Graph {
     // グラフの隣接リストを得る
     fn edge_list(&self) -> HashMap<String, HashSet<String>> {
         let mut res: HashMap<String, HashSet<String>> = HashMap::new();
+        for v in &self.verts {
+            res.insert(v.clone(), HashSet::new());
+        }
         for (u, v) in &self.edges {
-            res.entry(u.clone()).or_insert(HashSet::new()).insert(v.clone());
-            res.entry(v.clone()).or_insert(HashSet::new()).insert(u.clone());
+            res.get_mut(u).unwrap().insert(v.clone());
+            res.get_mut(v).unwrap().insert(u.clone());
         }
         res
     }
@@ -262,7 +271,12 @@ fn map_register(graph: Graph, limit: usize) -> HashMap<String, usize> {
 }
 
 fn reg_of(id: String, color_list: &HashMap<String, usize>) -> Register {
-    Register::S(*color_list.get(&id).unwrap_or(&0))
+    if let Some(num) = color_list.get(&id) {
+        Register::S(*num)
+    }
+    else {
+        Register::X
+    }
 }
 
 fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail: bool, color_list: &HashMap<String, usize>) {
@@ -425,29 +439,29 @@ fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail:
             return;
         },
         RawInstr::NewTuple(elms) => {
-            // ヒープにタプル用のメモリを確保
-            push(program, Instruction::Move {rd, rs: Register::Hp}, instr_span);
             // タプル用のメモリに要素をストア
             let mut tuple_bytes = 0;
             for elm in elms {
-                push(program, Instruction::Store { rs2: reg_of(elm, color_list), imm: tuple_bytes, rs1: rd }, instr_span);
+                push(program, Instruction::Store { rs2: reg_of(elm, color_list), imm: tuple_bytes, rs1: Register::Hp }, instr_span);
                 tuple_bytes += 4;
             }
+            // ヒープにタプル用のメモリを確保
+            push(program, Instruction::Move {rd, rs: Register::Hp}, instr_span);
             // ヒープポインタを移動
             push(program, Instruction::IOp { rd: Register::Hp, op: IOp::Add, rs1: Register::Hp, imm: tuple_bytes }, instr_span);
         },
         RawInstr::NewClosure { tag, free_vars } => {
-            // ヒープにクロージャー用のメモリを確保
-            push(program, Instruction::Move {rd, rs: Register::Hp}, instr_span);
             // クロージャーのメモリ先頭に関数ポインタをストア
             push(program, Instruction::LoadTag { rd: Register::X, tag }, instr_span);
-            push(program, Instruction::Store { rs2: Register::X, imm: 0, rs1: rd }, instr_span);
+            push(program, Instruction::Store { rs2: Register::X, imm: 0, rs1: Register::Hp }, instr_span);
             let mut closure_bytes = 4;
             // クロージャーのメモリに自由変数をストア
             for free_var in free_vars {
-                push(program, Instruction::Store { rs2: reg_of(free_var, color_list), imm: closure_bytes, rs1: rd }, instr_span);
+                push(program, Instruction::Store { rs2: reg_of(free_var, color_list), imm: closure_bytes, rs1: Register::Hp }, instr_span);
                 closure_bytes += 4;
             }
+            // ヒープにクロージャー用のメモリを確保
+            push(program, Instruction::Move {rd, rs: Register::Hp}, instr_span);
             // ヒープポインタを移動
             push(program, Instruction::IOp { rd: Register::Hp, op: IOp::Add, rs1: Register::Hp, imm: closure_bytes }, instr_span);
         },
@@ -467,14 +481,14 @@ fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail:
             };
             push(program, Instruction::Branch { op, rs1: reg_of(id_left, color_list), rs2: reg_of(id_right, color_list), tag: tag_then.clone() }, instr_span);
             // 条件が成立しなかった場合
-            push_expr(*exp_then, rd, program, is_tail, color_list);
+            push_expr(*exp_else, rd, program, is_tail, color_list);
             // (tail でなければ) 後続の処理にジャンプ
             if !is_tail {
                 push(program, Instruction::Jump{ tag: tag_cont.clone() }, instr_span)
             }
             // 条件が成立した場合
             push(program, Instruction::Tag(tag_then), instr_span);
-            push_expr(*exp_else, rd, program, is_tail, color_list);
+            push_expr(*exp_then, rd, program, is_tail, color_list);
             if !is_tail {
                 push(program, Instruction::Tag(tag_cont), instr_span);
             }
@@ -486,14 +500,14 @@ fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail:
             let tag_cont = generate_id("fi");
             push(program, Instruction::Branch { op: BOp::Eq, rs1: reg_of(id, color_list), rs2: Register::Zero, tag: tag_then.clone() }, instr_span);
             // 条件が成立しなかった場合
-            push_expr(*exp_then, rd, program, is_tail, color_list);
+            push_expr(*exp_else, rd, program, is_tail, color_list);
             // (tail でなければ) 後続の処理にジャンプ
             if !is_tail {
                 push(program, Instruction::Jump{ tag: tag_cont.clone() }, instr_span)
             }
             // 条件が成立した場合
             push(program, Instruction::Tag(tag_then), instr_span);
-            push_expr(*exp_else, rd, program, is_tail, color_list);
+            push_expr(*exp_then, rd, program, is_tail, color_list);
             if !is_tail {
                 push(program, Instruction::Tag(tag_cont), instr_span);
             }
@@ -525,18 +539,23 @@ fn convert_function(function: Function, color_list: &HashMap<String, usize>) -> 
     for (index, arg) in function.args.into_iter().enumerate() {
         program.push(Spanned::new(Instruction::Move{ rd: reg_of(arg, color_list), rs: Register::A(index) }, span));
     }
-    // クロージャー内の自由変数を S レジスタに展開する
+    // クロージャー自身を S レジスタに渡す
     if arg_count >= AREG_NUM {
         log::error!("too many arguments to fit in register");
         panic!("internal compiler error");
     }
+    if !function.free_vars.is_empty() {
+        program.push(Spanned::new(Instruction::Move{ rd: reg_of(function.tag.clone(), color_list), rs: Register::A(arg_count) }, span));
+    }
+    // クロージャー内の自由変数を S レジスタに展開する
     let mut offset = 4;
     for free_var in function.free_vars {
         program.push(Spanned::new(Instruction::Load{ rd: reg_of(free_var, color_list), imm: offset, rs1: Register::A(arg_count) }, span));
         offset += 4;
     }
     // 関数本体を展開する
-    push_expr(function.body, Register::A(0), &mut program, true, color_list);
+    let is_tail = function.tag != "min_caml_start";
+    push_expr(function.body, Register::A(0), &mut program, is_tail, color_list);
     super::asm::Function::new(function.tag, program)
 }
 
@@ -546,6 +565,12 @@ pub fn do_register_allocation(functions: Vec<Function>) -> Vec<super::asm::Funct
         let graph = build_graph(&function.body);
         let color_list = map_register(graph, 50);
         let function = convert_function(function, &color_list);
+        let function = if function.tag == "min_caml_start" {
+            function 
+        }
+        else {
+            function.add_prologue_epilogue()
+        };
         res.push(function);
     }
     res

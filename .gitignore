@@ -75,3 +75,4 @@ src/test/rustdoc-gui/src/**.lock
 #/target
 
 *.txt
+*.s

@@ -89,7 +89,18 @@ fn embed_expr(expr: Expr, consts: &mut HashMap<String, i32>) -> Box<Expr> {
                 instr_suc: embed_expr(*instr_suc, consts),
             }
         }
-        RawExpr::Is(instr) => RawExpr::Is(instr),
+        RawExpr::Is(instr) => {
+            let raw_instr = match instr.item {
+                RawInstr::If { id_left, op, id_right, exp_then, exp_else } => {
+                    RawInstr::If { id_left, op, id_right, exp_then: embed_expr(*exp_then, consts), exp_else: embed_expr(*exp_else, consts) }
+                },
+                RawInstr::IfZero { id, exp_then, exp_else } => {
+                    RawInstr::IfZero { id, exp_then: embed_expr(*exp_then, consts), exp_else: embed_expr(*exp_else, consts) }
+                },
+                otherwise => otherwise
+            };
+            RawExpr::Is(*wrap(raw_instr))
+        },
     };
     wrap_expr(raw_expr)
 }

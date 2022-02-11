@@ -161,6 +161,55 @@ fn convert_expr(
             }
         }
         syntax::RawExpr::Apply { fun, args } => {
+            if let syntax::RawExpr::Var(fun_id) = &fun.item {
+                if !env.contains_key(fun_id) {
+                    if extenv.contains_key(fun_id) {
+                        log::info!("Assuming {fun_id} as external function");
+                        // 外部関数の場合
+                        let fun_type = match extenv.get(fun_id) {
+                            Some(t) => t,
+                            None => {
+                                panic!("internal compiler error")
+                            },
+                        }.clone().to_type().unwrap();
+                        let k_args: Vec<_> = args
+                            .into_iter()
+                            .map(|arg| convert_expr(arg, env, alpha, extenv))
+                            .collect();
+                        return match fun_type {
+                            Type::Fun(_, return_type) => {
+                                let env = Rc::new(RefCell::new(env));
+                                let apply: Box<dyn FnOnce(Vec<String>) -> RawExpr> = Box::new(|arg_ids| {
+                                    RawExpr::ExtApply {
+                                        fun: fun_id.clone(),
+                                        args: arg_ids,
+                                    }
+                                });
+                                (
+                                    wrap(k_args.into_iter().rev().fold(apply, |acc, arg| {
+                                        Box::new(|mut arg_ids: Vec<String>| {
+                                            insert_let(
+                                                arg,
+                                                env.clone(),
+                                                Box::new(|arg_id| {
+                                                    arg_ids.push(arg_id);
+                                                    acc(arg_ids)
+                                                }),
+                                            )
+                                            .item
+                                        })
+                                    })(vec![])),
+                                    *return_type,
+                                )
+                            }
+                            _ => {
+                                panic!("internal compiler error")
+                            }
+                        }
+                    }
+                }
+            }
+            // 外部関数でない場合
             let k_fun = convert_expr(*fun, env, alpha, extenv);
             let fun_type = k_fun.1.clone();
             let k_args: Vec<_> = args
@@ -543,7 +592,7 @@ pub fn k_normalize(
     let mut alpha = HashMap::new();
     let (expr, _) = convert_expr(expr, &mut env, &mut alpha, extenv);
     for (name, t) in extenv.iter() {
-        env.insert(name.clone(), sanitize_bool(t.clone().to_type().unwrap()));
+        env.insert(format!("min_caml_{}", name.clone()), sanitize_bool(t.clone().to_type().unwrap()));
     }
     (*expr, env)
 }

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs::{self, File}, io::Write};
 
 use crate::{closurize, code, knormalize, parse, riscv, typing};
 
@@ -24,13 +24,16 @@ pub fn compile(filename: &String) {
     let functions = riscv::specify::specify(closurized, toplevels, &mut k_env);
     let functions = riscv::embed::embed(functions);
 
-    // for function in functions {
-    //     println!("{function}");
-    // }
+    for function in &functions {
+        println!("{function}");
+    }
 
     let functions = riscv::regalloc::do_register_allocation(functions);
 
+    let mut f = File::create("output.s").expect("Failed to open output file");
+
     for function in functions {
-        print!("{}", function);
+        //print!("{}", function);
+        f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
     }
 }

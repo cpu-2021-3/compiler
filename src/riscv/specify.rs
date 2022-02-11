@@ -130,8 +130,8 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
                 .iter()
                 .map(|elm_type| match elm_type {
                     Type::Unit => 0usize,
-                    Type::Float => FLOAT_BYTES_EXP,
-                    _ => INT_BYTES_EXP,
+                    Type::Float => 1 << FLOAT_BYTES_EXP,
+                    _ => 1 << INT_BYTES_EXP,
                 })
                 .sum::<usize>()
                 .try_into()

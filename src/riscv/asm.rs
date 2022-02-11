@@ -31,22 +31,22 @@ impl fmt::Display for Register {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ROp {
     Add, Sub, Mul, Div, FAdd, FSub, FMul, FDiv, LShift, RShift, FEq, FLEq
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IOp {
     Add, LShift, RShift
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BOp {
     Eq, LEq
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Tag(String),
     SetImm {
@@ -91,7 +91,7 @@ pub type Program = Vec<Spanned<Instruction>>;
 
 #[derive(Debug)]
 pub struct Function {
-    tag: String,
+    pub tag: String,
     program: Program
 }
 
@@ -100,6 +100,33 @@ impl Function {
         Self {
             tag, program
         }
+    }
+    pub fn add_prologue_epilogue(self) -> Self {
+        let used = self.used_registers();
+        let mut program = vec![];
+        let stack_size = used.len() as i32 * 4;
+        // prologue を追加
+        program.push(Spanned::new(Instruction::IOp{ rd: Register::Sp, op: IOp::Add, rs1: Register::Sp, imm: -stack_size }, (0, 0)));
+        for (index, reg) in used.iter().enumerate() {
+            program.push(Spanned::new(Instruction::Store{ rs2: *reg, imm: index as i32 * 4, rs1: Register::Sp  }, (0, 0)));
+        }
+        // epilogue を計算
+        let mut epilogue = vec![];
+        for (index, reg) in used.iter().enumerate() {
+            epilogue.push(Spanned::new(Instruction::Load{ rd: *reg, imm: index as i32 * 4, rs1: Register::Sp  }, (0, 0)));
+        }
+        epilogue.push(Spanned::new(Instruction::IOp{ rd: Register::Sp, op: IOp::Add, rs1: Register::Sp, imm: stack_size }, (0, 0)));
+        // 本体に epilogue を挿入
+        for Spanned {item, span} in self.program {
+            match &item {
+                Instruction::Call(_, true) | Instruction::CallTag(_, true) | Instruction::Return => {
+                    program.extend(epilogue.clone());
+                },
+                _ => {}
+            }
+            program.push(Spanned::new(item, span));
+        }
+        Self::new(self.tag, program)
     }
     pub fn used_registers(&self) -> HashSet<Register> {
         let mut used = HashSet::new();
@@ -197,7 +224,10 @@ impl fmt::Display for Function {
                     write!(f, "\tret")?;
                 },
             }
-            write!(f, "\t# {} - {}\n", code::line_column(span.0), code::line_column(span.1))?;
+            if span.1 != 0 {
+                write!(f, "\t# {} - {}", code::line_column(span.0), code::line_column(span.1))?;
+            }
+            write!(f, "\n")?;
         }
         Ok(())
     }
