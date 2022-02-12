@@ -137,7 +137,8 @@ impl Function {
                 Instruction::Move { rd, rs: _ } |
                 Instruction::ROp { rd, op: _, rs1: _, rs2: _ } |
                 Instruction::LoadTag { rd, tag: _ } |
-                Instruction::Load { rd, imm: _, rs1: _ } => {
+                Instruction::Load { rd, imm: _, rs1: _ } | 
+                Instruction::IOp { rd, op: _, rs1: _, imm: _ } => {
                     if let Register::S(_) = rd {
                         used.insert(*rd);
                     }
@@ -145,7 +146,7 @@ impl Function {
                 Instruction::Call(_, false) |
                 Instruction::CallTag(_, false) => {
                     used.insert(Register::Ra);
-                }
+                },
                 _ => {}
             }
         }
