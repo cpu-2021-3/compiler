@@ -98,12 +98,6 @@ let rec print_int x =
   let rec rem x y = 
     if x < y then x else rem (x - y) y
   in
-  if x < 10 then
-    print_char (x + 48)
-  else if x < 100 then
-    (print_char (quot x 10 + 48);
-    print_char (rem x 10 + 48))
-  else 
     (print_char (quot x 100 + 48);
     let xx = rem x 100 in
     print_char (quot xx 10 + 48);
@@ -2516,6 +2510,6 @@ let rec rt size_x size_y =
 )
 in
 
-let _ = rt 128 128
+let _ = rt 16 16
 
 in ()
