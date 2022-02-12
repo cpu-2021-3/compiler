@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::code::line_column;
 use crate::syntax::RawExpr::*;
 use crate::syntax::{BinaryOp::*, Expr, RawTypedVar, TypedVar, UnaryOp::*};
 use crate::ty::VarType;
@@ -369,9 +370,12 @@ fn infer_expr(
             exp_suc,
         } => {
             unify_one_expr(&var.item.t, exp_var, env, extenv)?;
-            env.insert(var.item.name.clone(), var.item.t.clone());
+            let old_var_type = env.insert(var.item.name.clone(), var.item.t.clone());
             let suc_type = infer_expr(env, exp_suc, extenv)?;
             env.remove(&var.item.name);
+            if let Some(old_var_type) = old_var_type {
+                env.insert(var.item.name.clone(), old_var_type);
+            }
             suc_type
         }
         LetRecIn {
@@ -380,16 +384,23 @@ fn infer_expr(
             exp_fun,
             exp_suc,
         } => {
-            env.insert(fun.item.name.clone(), fun.item.t.clone());
+            let old_fun_type = env.insert(fun.item.name.clone(), fun.item.t.clone());
             let whole_type = infer_expr(env, exp_suc, extenv)?;
+            let mut old_arg_types = vec![];
             for arg in args {
-                env.insert(arg.item.name.clone(), arg.item.t.clone());
+                old_arg_types.push(env.insert(arg.item.name.clone(), arg.item.t.clone()));
             }
             let return_type = infer_expr(env, exp_fun, extenv)?;
-            for arg in args {
+            for (arg, old_type) in args.iter().zip(old_arg_types) {
                 env.remove(&arg.item.name);
+                if let Some(old_type) = old_type {
+                    env.insert(arg.item.name.clone(), old_type);
+                }
             }
             env.remove(&fun.item.name);
+            if let Some(old_fun_type) = old_fun_type {
+                env.insert(fun.item.name.clone(), old_fun_type);
+            }
             let fun_should_be = VarType::Fun(
                 args.iter().map(|arg| arg.item.t.clone()).collect(),
                 Box::new(return_type),
@@ -415,12 +426,16 @@ fn infer_expr(
                 env,
                 extenv,
             )?;
+            let mut old_types = vec![];
             for var in vars {
-                env.insert(var.item.name.clone(), var.item.t.clone());
+                old_types.push(env.insert(var.item.name.clone(), var.item.t.clone()));
             }
             let suc_type = infer_expr(env, exp_suc, extenv)?;
-            for var in vars {
+            for (var, old_type) in vars.iter().zip(old_types) {
                 env.remove(&var.item.name);
+                if let Some(old_type) = old_type {
+                    env.insert(var.item.name.clone(), old_type);
+                }
             }
             suc_type
         }
@@ -466,7 +481,7 @@ fn infer_expr(
             } else if let Some(t) = extenv.get(name) {
                 t.clone()
             } else {
-                log::info!("Free variable {} assumed as external.", name);
+                log::info!("Free variable {} (in {} - {}) assumed as external.", name, line_column(expr.span.0), line_column(expr.span.1));
                 let t = VarType::new();
                 extenv.insert(name.clone(), t.clone());
                 t

@@ -365,7 +365,6 @@ fn typecheck_expr(
                 }
                 return Type::Array(Box::new(Type::Float));
             }
-            log::debug!("{tag}");
             let type_tag = env.get(tag).unwrap().clone();
             if scope.contains(tag) {
                 panic!("typecheck for closurized expression failed!");
