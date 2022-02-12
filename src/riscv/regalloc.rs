@@ -1,4 +1,6 @@
-use std::{collections::{HashSet, HashMap}, mem::swap, convert::TryInto, iter::Inspect, ops::Index};
+use std::{mem::swap, convert::TryInto, iter::Inspect, ops::Index};
+
+use fnv::{FnvHashSet, FnvHashMap};
 
 use crate::{riscv::asm::{Instruction, IOp}, knormal::{UnaryOp, BinaryOp, CondOp}, span::{Spanned, Span}, id::generate_id};
 
@@ -6,15 +8,15 @@ use super::{specific::{Function, Expr, RawExpr, RawInstr, Instr}, asm::{Program,
 
 #[derive(Clone, Debug)]
 struct Graph {
-    verts: HashSet<String>,
-    edges: HashSet<(String, String)>
+    verts: FnvHashSet<String>,
+    edges: FnvHashSet<(String, String)>
 }
 
 // interference graph
 impl Graph {
     // 新しいグラフを生成
     fn new() -> Self {
-        Graph {verts: HashSet::new(), edges: HashSet::new()}
+        Graph {verts: FnvHashSet::default(), edges: FnvHashSet::default()}
     }
     // u と v を辺でつなぐ
     fn add(&mut self, mut u: String, mut v: String) {
@@ -29,7 +31,7 @@ impl Graph {
         self.edges.insert((u, v));
     }
     // s 中のすべての異なる 2 頂点同士を辺でつなぐ
-    fn clique(&mut self, s: &HashSet<String>) {
+    fn clique(&mut self, s: &FnvHashSet<String>) {
         for x in s {
             for y in s {
                 self.add(x.clone(), y.clone());
@@ -46,10 +48,10 @@ impl Graph {
         }
     }
     // グラフの隣接リストを得る
-    fn edge_list(&self) -> HashMap<String, HashSet<String>> {
-        let mut res: HashMap<String, HashSet<String>> = HashMap::new();
+    fn edge_list(&self) -> FnvHashMap<String, FnvHashSet<String>> {
+        let mut res: FnvHashMap<String, FnvHashSet<String>> = FnvHashMap::default();
         for v in &self.verts {
-            res.insert(v.clone(), HashSet::new());
+            res.insert(v.clone(), FnvHashSet::default());
         }
         for (u, v) in &self.edges {
             res.get_mut(u).unwrap().insert(v.clone());
@@ -64,25 +66,25 @@ impl Graph {
 #[derive(Clone)]
 struct Data {
     // ある命令以前から生きているレジスタの集合
-    pub prop: HashSet<String>, 
+    pub prop: FnvHashSet<String>, 
     // ある命令以後にある依存関係のグラフ
     pub graph: Graph
 }
 
 impl Data {
     // prop 中のすべての 2 頂点を辺で結んだうえで Data を返す
-    fn clique_prop(prop: HashSet<String>, mut graph: Graph) -> Self {
+    fn clique_prop(prop: FnvHashSet<String>, mut graph: Graph) -> Self {
         graph.clique(&prop);
         Self {prop, graph}
     }
 
     fn new() -> Self {
-        Self {prop: HashSet::new(), graph: Graph::new() }
+        Self {prop: FnvHashSet::default(), graph: Graph::new() }
     }
 }
 
 // ret <- instr 文の後ろからの Data をもとに、ret <- instr 文の前の Data を計算する
-fn update_prop(prop: &mut HashSet<String>, ret: &String, instr: &RawInstr) {
+fn update_prop(prop: &mut FnvHashSet<String>, ret: &String, instr: &RawInstr) {
     prop.remove(ret);
     match instr {
         RawInstr::Unit | RawInstr::Int(_) | RawInstr::Float(_) | RawInstr::DataTag(_) => {},
@@ -213,8 +215,8 @@ fn build_graph(expr: &Expr) -> Graph {
 }
 
 // graph 上の各頂点にレジスタ番号 (0 以上 limit 未満) を割り当てる
-fn map_register(graph: Graph, limit: usize) -> HashMap<String, usize> {
-    let mut color_list: HashMap<String, usize> = HashMap::new();
+fn map_register(graph: Graph, limit: usize) -> FnvHashMap<String, usize> {
+    let mut color_list: FnvHashMap<String, usize> = FnvHashMap::default();
     let mut edge_list = graph.edge_list();
     let mut vertice_stack = vec![];
     // 頂点のスタックを構築
@@ -246,7 +248,7 @@ fn map_register(graph: Graph, limit: usize) -> HashMap<String, usize> {
     loop {
         match vertice_stack.pop() {
             Some(vertice) => {
-                let mut used_colors: HashSet<usize> = HashSet::new();
+                let mut used_colors: FnvHashSet<usize> = FnvHashSet::default();
                 for other in edge_list.get(&vertice).unwrap() {
                     if let Some(color) = color_list.get(other) {
                         used_colors.insert(*color);
@@ -270,7 +272,7 @@ fn map_register(graph: Graph, limit: usize) -> HashMap<String, usize> {
     color_list
 }
 
-fn reg_of(id: String, color_list: &HashMap<String, usize>) -> Register {
+fn reg_of(id: String, color_list: &FnvHashMap<String, usize>) -> Register {
     if let Some(num) = color_list.get(&id) {
         Register::S(*num)
     }
@@ -279,7 +281,7 @@ fn reg_of(id: String, color_list: &HashMap<String, usize>) -> Register {
     }
 }
 
-fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail: bool, color_list: &HashMap<String, usize>) {
+fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail: bool, color_list: &FnvHashMap<String, usize>) {
     let instr_span = instr.span;
     fn push(program: &mut Program, instruction: Instruction, instr_span: Span) {
         program.push(Spanned::new(instruction, instr_span))
@@ -519,7 +521,7 @@ fn push_instructions(instr: Instr, rd: Register, program: &mut Program, is_tail:
     }
 }
 
-fn push_expr(expr: Expr, rd: Register, program: &mut Program, is_tail: bool, color_list: &HashMap<String, usize>) {
+fn push_expr(expr: Expr, rd: Register, program: &mut Program, is_tail: bool, color_list: &FnvHashMap<String, usize>) {
     match expr.item {
         RawExpr::LetIn { id, instr_id, instr_suc } => {
             push_instructions(instr_id, reg_of(id, color_list), program, false, color_list);
@@ -531,7 +533,7 @@ fn push_expr(expr: Expr, rd: Register, program: &mut Program, is_tail: bool, col
     }
 }
 
-fn convert_function(function: Function, color_list: &HashMap<String, usize>) -> super::asm::Function {
+fn convert_function(function: Function, color_list: &FnvHashMap<String, usize>) -> super::asm::Function {
     let mut program = Program::new();
     let span = function.body.span;
     let arg_count = function.args.len();

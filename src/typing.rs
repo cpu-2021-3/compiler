@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
 use crate::code::line_column;
 use crate::syntax::RawExpr::*;
 use crate::syntax::{BinaryOp::*, Expr, RawTypedVar, TypedVar, UnaryOp::*};
 use crate::ty::VarType;
 use crate::{code, span::*};
 use anyhow::Result;
+use fnv::FnvHashMap;
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug)]
@@ -128,8 +127,8 @@ fn unify(t1: &VarType, t2: &VarType) -> Result<(), UnificationError> {
 fn unify_one_expr(
     t: &VarType,
     expr: &Expr<VarType>,
-    env: &mut HashMap<String, VarType>,
-    extenv: &mut HashMap<String, VarType>,
+    env: &mut FnvHashMap<String, VarType>,
+    extenv: &mut FnvHashMap<String, VarType>,
 ) -> Result<(), TypingError> {
     let inferred_type = infer_expr(env, expr, extenv)?;
     unify(&t, &inferred_type).map_err(|u| match u {
@@ -146,8 +145,8 @@ fn unify_one_expr(
 fn unify_two_exprs(
     exp1: &Expr<VarType>,
     exp2: &Expr<VarType>,
-    env: &mut HashMap<String, VarType>,
-    extenv: &mut HashMap<String, VarType>,
+    env: &mut FnvHashMap<String, VarType>,
+    extenv: &mut FnvHashMap<String, VarType>,
 ) -> Result<(), TypingError> {
     let _res = unify_two_exprs_and_return_type(exp1, exp2, env, extenv)?;
     Ok(())
@@ -157,8 +156,8 @@ fn unify_two_exprs(
 fn unify_two_exprs_and_return_type(
     exp1: &Expr<VarType>,
     exp2: &Expr<VarType>,
-    env: &mut HashMap<String, VarType>,
-    extenv: &mut HashMap<String, VarType>,
+    env: &mut FnvHashMap<String, VarType>,
+    extenv: &mut FnvHashMap<String, VarType>,
 ) -> Result<VarType, TypingError> {
     let inferred_type1 = infer_expr(env, exp1, extenv)?;
     let inferred_type2 = infer_expr(env, exp2, extenv)?;
@@ -304,9 +303,9 @@ impl SolveVarType for VarType {
 
 /// 型環境 env のもとで expr の型を推論する
 fn infer_expr(
-    env: &mut HashMap<String, VarType>,
+    env: &mut FnvHashMap<String, VarType>,
     expr: &Expr<VarType>,
-    extenv: &mut HashMap<String, VarType>,
+    extenv: &mut FnvHashMap<String, VarType>,
 ) -> Result<VarType, TypingError> {
     let result = match &expr.item {
         Unit => VarType::Unit,
@@ -493,14 +492,13 @@ fn infer_expr(
 
 pub fn do_typing(
     expr: Expr<VarType>,
-) -> Result<(Expr<VarType>, HashMap<String, VarType>), TypingError> {
-    let mut env = HashMap::new();
-    let mut extenv = HashMap::from([
-        ("sqrt".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Float))),
-        ("float_of_int".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Float))),
-        ("int_of_float".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Int))),
-        ("print_char".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Unit))),
-    ]);
+) -> Result<(Expr<VarType>, FnvHashMap<String, VarType>), TypingError> {
+    let mut env = FnvHashMap::default();
+    let mut extenv = FnvHashMap::default();
+    extenv.insert("sqrt".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Float)));
+    extenv.insert("float_of_int".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Float)));
+    extenv.insert("int_of_float".to_string(), VarType::Fun(vec![VarType::Float], Box::new(VarType::Int)));
+    extenv.insert("print_char".to_string(), VarType::Fun(vec![VarType::Int], Box::new(VarType::Unit)));
     unify_one_expr(&VarType::Unit, &expr, &mut env, &mut extenv)?;
     extenv.iter_mut().for_each(|(_name, t)| {
         *t = t.clone().solve();

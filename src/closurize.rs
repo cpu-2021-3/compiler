@@ -1,12 +1,14 @@
-use std::collections::{HashMap, HashSet};
+
+
+use fnv::{FnvHashSet, FnvHashMap};
 
 use crate::knormal::{BinaryOp, CondOp, UnaryOp};
 use crate::{closure::*, knormal, span::Spanned, ty::Type};
 
-fn free_vars(expr: &RawExpr) -> HashSet<String> {
+fn free_vars(expr: &RawExpr) -> FnvHashSet<String> {
     match expr {
-        RawExpr::Unit | RawExpr::Int(_) | RawExpr::Float(_) => HashSet::new(),
-        RawExpr::ExtArray { array: _ } => HashSet::new(),
+        RawExpr::Unit | RawExpr::Int(_) | RawExpr::Float(_) => FnvHashSet::default(),
+        RawExpr::ExtArray { array: _ } => FnvHashSet::default(),
         RawExpr::Var(id) => vec![id.clone()].into_iter().collect(),
         RawExpr::UnOp { op: _, id } => vec![id.clone()].into_iter().collect(),
         RawExpr::BiOp {
@@ -25,7 +27,7 @@ fn free_vars(expr: &RawExpr) -> HashSet<String> {
         } => {
             let exp_then = free_vars(&exp_then.item);
             let exp_else = free_vars(&exp_else.item);
-            let mut res: HashSet<_> = vec![id_left.clone(), id_right.clone()]
+            let mut res: FnvHashSet<_> = vec![id_left.clone(), id_right.clone()]
                 .into_iter()
                 .collect();
             res.extend(exp_then);
@@ -43,7 +45,7 @@ fn free_vars(expr: &RawExpr) -> HashSet<String> {
             res
         }
         RawExpr::ApplyCls { cls, args } => {
-            let mut res: HashSet<String> = args.clone().into_iter().collect();
+            let mut res: FnvHashSet<String> = args.clone().into_iter().collect();
             res.insert(cls.clone());
             res
         }
@@ -66,8 +68,8 @@ fn free_vars(expr: &RawExpr) -> HashSet<String> {
 
 fn convert_expr(
     expr: &knormal::Expr,
-    env: &HashMap<String, Type>,
-    direct_funs: &mut HashSet<String>,
+    env: &FnvHashMap<String, Type>,
+    direct_funs: &mut FnvHashSet<String>,
 ) -> (Box<Expr>, Vec<Function>) {
     let expr_span = expr.span.clone();
     let wrap = |raw_expr: RawExpr| Box::new(Spanned::new(raw_expr, expr_span));
@@ -137,7 +139,7 @@ fn convert_expr(
             // exp_fun 中の自由変数 (引数除く) を計算
             let arg_set = args.iter().cloned().collect();
             let exp_fun_frees = free_vars(&c_exp_fun.item);
-            let exp_fun_frees: HashSet<_> = exp_fun_frees.difference(&arg_set).collect();
+            let exp_fun_frees: FnvHashSet<_> = exp_fun_frees.difference(&arg_set).collect();
             let c_exp_fun = if !exp_fun_frees.is_empty() {
                 // exp_fun に自由変数がある場合は、fun を直接呼出しする関数の集合 direct_funs から外し、もう一度変換
                 log::info!("Function {} has free variables: {:?}", fun, exp_fun_frees);
@@ -228,8 +230,8 @@ fn convert_expr(
     (expr, toplevels)
 }
 
-pub fn closurize(expr: knormal::Expr, env: &HashMap<String, Type>) -> (Expr, Vec<Function>) {
-    let mut direct_funs: HashSet<String> = vec![].into_iter().collect();
+pub fn closurize(expr: knormal::Expr, env: &FnvHashMap<String, Type>) -> (Expr, Vec<Function>) {
+    let mut direct_funs: FnvHashSet<String> = vec![].into_iter().collect();
     let (expr, toplevels) = convert_expr(&expr, env, &mut direct_funs);
     (*expr, toplevels)
 }
@@ -237,9 +239,9 @@ pub fn closurize(expr: knormal::Expr, env: &HashMap<String, Type>) -> (Expr, Vec
 // 式 (Expr) の型検査
 fn typecheck_expr(
     expr: &Expr,
-    env: &HashMap<String, Type>,
-    scope: &mut HashSet<String>,
-    freevars_dict: &HashMap<String, Vec<String>>,
+    env: &FnvHashMap<String, Type>,
+    scope: &mut FnvHashSet<String>,
+    freevars_dict: &FnvHashMap<String, Vec<String>>,
 ) -> Type {
     let get_type = |id| match env.get(id) {
         Some(t) => t.clone(),
@@ -445,11 +447,11 @@ fn typecheck_expr(
 
 fn typecheck_function(
     function: &Function,
-    env: &HashMap<String, Type>,
-    freevars_dict: &HashMap<String, Vec<String>>,
+    env: &FnvHashMap<String, Type>,
+    freevars_dict: &FnvHashMap<String, Vec<String>>,
 ) {
     let get_type = |id| env.get(id).unwrap().clone();
-    let mut scope: HashSet<String> = HashSet::new();
+    let mut scope: FnvHashSet<String> = FnvHashSet::default();
     let type_tag = env.get(&function.tag).unwrap().clone();
     // 自由変数がある場合、クロージャーとみなし、scope に自分自身を入れる
     if !freevars_dict.get(&function.tag).unwrap().is_empty() {
@@ -481,12 +483,12 @@ fn typecheck_function(
     }
 }
 
-pub fn typecheck(expr: &Expr, env: &HashMap<String, Type>, toplevels: &Vec<Function>) {
-    let mut freevars_dict = HashMap::<String, Vec<String>>::new();
+pub fn typecheck(expr: &Expr, env: &FnvHashMap<String, Type>, toplevels: &Vec<Function>) {
+    let mut freevars_dict = FnvHashMap::<String, Vec<String>>::default();
     for function in toplevels {
         freevars_dict.insert(function.tag.clone(), function.free_vars.clone());
     }
-    let mut scope = HashSet::new();
+    let mut scope = FnvHashSet::default();
     typecheck_expr(expr, env, &mut scope, &freevars_dict);
     if !scope.is_empty() {
         panic!("typecheck for closurized expression failed!")
@@ -512,14 +514,14 @@ mod tests {
                 args: vec!["x".to_string()],
             }),
         });
-        let mut env = HashMap::new();
+        let mut env = FnvHashMap::default();
         env.insert(
             "f".to_string(),
             Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
         );
         env.insert("x".to_string(), Type::Int);
-        let mut scope = HashSet::new();
-        let mut freevars_dict = HashMap::new();
+        let mut scope = FnvHashSet::default();
+        let mut freevars_dict = FnvHashMap::default();
         freevars_dict.insert("f".to_string(), vec![]);
         typecheck_expr(&expr1, &env, &mut scope, &freevars_dict);
     }
@@ -547,15 +549,15 @@ mod tests {
                 }),
             }),
         });
-        let mut env = HashMap::new();
+        let mut env = FnvHashMap::default();
         env.insert(
             "f".to_string(),
             Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
         );
         env.insert("x".to_string(), Type::Int);
         env.insert("y".to_string(), Type::Float);
-        let mut scope = HashSet::new();
-        let mut freevars_dict = HashMap::new();
+        let mut scope = FnvHashSet::default();
+        let mut freevars_dict = FnvHashMap::default();
         freevars_dict.insert("f".to_string(), vec![]);
         typecheck_expr(&expr2, &env, &mut scope, &freevars_dict);
     }
@@ -583,15 +585,15 @@ mod tests {
                 }),
             }),
         });
-        let mut env = HashMap::new();
+        let mut env = FnvHashMap::default();
         env.insert(
             "f".to_string(),
             Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
         );
         env.insert("x".to_string(), Type::Int);
         env.insert("y".to_string(), Type::Float);
-        let mut scope = HashSet::new();
-        let mut freevars_dict = HashMap::new();
+        let mut scope = FnvHashSet::default();
+        let mut freevars_dict = FnvHashMap::default();
         freevars_dict.insert("f".to_string(), vec!["y".to_string()]);
         assert_eq!(
             typecheck_expr(&expr3, &env, &mut scope, &freevars_dict),
@@ -621,15 +623,15 @@ mod tests {
                 }),
             }),
         });
-        let mut env = HashMap::new();
+        let mut env = FnvHashMap::default();
         env.insert(
             "f".to_string(),
             Type::Fun(vec![Type::Int], Box::new(Type::Unit)),
         );
         env.insert("x".to_string(), Type::Int);
         env.insert("y".to_string(), Type::Float);
-        let mut scope = HashSet::new();
-        let mut freevars_dict = HashMap::new();
+        let mut scope = FnvHashSet::default();
+        let mut freevars_dict = FnvHashMap::default();
         freevars_dict.insert("f".to_string(), vec!["y".to_string()]);
         assert_eq!(
             typecheck_expr(&expr3, &env, &mut scope, &freevars_dict),

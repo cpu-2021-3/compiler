@@ -1,5 +1,6 @@
 use core::fmt;
-use std::collections::HashSet;
+
+use fnv::FnvHashSet;
 
 use crate::{span::Spanned, code};
 
@@ -128,8 +129,8 @@ impl Function {
         }
         Self::new(self.tag, program)
     }
-    pub fn used_registers(&self) -> HashSet<Register> {
-        let mut used = HashSet::new();
+    pub fn used_registers(&self) -> FnvHashSet<Register> {
+        let mut used = FnvHashSet::default();
         for line in &self.program {
             match &line.item {
                 Instruction::SetImm { rd, imm: _ } |

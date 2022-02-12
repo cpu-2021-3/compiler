@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 
 use crate::{knormal::BinaryOp, span::Spanned};
 
@@ -7,7 +7,7 @@ use super::specific::*;
 static EMBED_MIN: i32 = -2048;
 static EMBED_MAX: i32 = 2047;
 
-fn embed_expr(expr: Expr, consts: &mut HashMap<String, i32>) -> Box<Expr> {
+fn embed_expr(expr: Expr, consts: &mut FnvHashMap<String, i32>) -> Box<Expr> {
     let expr_span = expr.span;
     let wrap_expr = |expr| Box::new(Spanned::new(expr, expr_span));
     let wrap = |instr| Box::new(Spanned::new(instr, expr_span));
@@ -109,7 +109,7 @@ pub fn embed(functions: Vec<Function>) -> Vec<Function> {
     functions
         .into_iter()
         .map(|function| {
-            let mut consts = HashMap::new();
+            let mut consts = FnvHashMap::default();
             Function {
                 tag: function.tag,
                 args: function.args,

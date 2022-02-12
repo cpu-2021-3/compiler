@@ -1,4 +1,6 @@
-use std::{collections::HashMap, convert::TryInto};
+use std::{convert::TryInto};
+
+use fnv::FnvHashMap;
 
 use super::specific::*;
 use crate::{closure, id::generate_id, knormal::BinaryOp, span::Spanned, ty::Type};
@@ -28,7 +30,7 @@ fn flatten_let(exp_id: Expr, id_outer: String, exp_suc: Expr) -> Box<Expr> {
     Box::new(Spanned::new(converted_item, exp_id.span))
 }
 
-fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
+fn convert_expr(expr: closure::Expr, env: &mut FnvHashMap<String, Type>) -> Expr {
     let expr_span = expr.span;
     let wrap = |instr| Box::new(Spanned::new(instr, expr_span));
     let wrap_expr = |expr| Box::new(Spanned::new(expr, expr_span));
@@ -259,7 +261,7 @@ fn convert_expr(expr: closure::Expr, env: &mut HashMap<String, Type>) -> Expr {
 pub fn specify(
     expr: closure::Expr,
     toplevels: Vec<closure::Function>,
-    env: &mut HashMap<String, Type>,
+    env: &mut FnvHashMap<String, Type>,
 ) -> Vec<Function> {
     let mut functions: Vec<Function> = vec![];
     toplevels.into_iter().for_each(|toplevel| {

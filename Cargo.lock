@@ -86,6 +86,7 @@ name = "compiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fnv",
  "global_counter",
  "lalrpop",
  "lalrpop-util",
@@ -149,6 +150,12 @@ name = "fixedbitset"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ab347416e802de484e4d03c7316c48f1ecb56574dfd4a46a80f173ce1de04d"
+
+[[package]]
+name = "fnv"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "getrandom"

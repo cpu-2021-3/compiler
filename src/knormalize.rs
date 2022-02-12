@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
+
+use fnv::FnvHashMap;
 
 use crate::id::generate_id;
 use crate::knormal::{BinaryOp, CondOp, Expr, RawExpr, UnaryOp};
@@ -9,7 +10,7 @@ use crate::ty::{Type, VarType};
 
 fn insert_let<F: FnOnce(String) -> RawExpr>(
     (expr, t): (Box<Expr>, Type),
-    env: Rc<RefCell<&mut HashMap<String, Type>>>,
+    env: Rc<RefCell<&mut FnvHashMap<String, Type>>>,
     f_exp_t_cont: F,
 ) -> Box<Expr> {
     let expr_span = expr.span.clone();
@@ -48,9 +49,9 @@ fn sanitize_bool(t: Type) -> Type {
 /// この際、式中の変数名はかぶらないようにα変換された上で、各変数の型を env に登録していく
 fn convert_expr(
     expr: syntax::Expr<VarType>,
-    env: &mut HashMap<String, Type>,
-    alpha: &mut HashMap<String, Vec<String>>,
-    extenv: &HashMap<String, VarType>,
+    env: &mut FnvHashMap<String, Type>,
+    alpha: &mut FnvHashMap<String, Vec<String>>,
+    extenv: &FnvHashMap<String, VarType>,
 ) -> (Box<Expr>, Type) {
     let expr_span = expr.span.clone();
     let wrap = |raw_expr: RawExpr| Box::new(Spanned::new(raw_expr, expr_span));
@@ -586,10 +587,10 @@ fn convert_expr(
 
 pub fn k_normalize(
     expr: syntax::Expr<VarType>,
-    extenv: &HashMap<String, VarType>,
-) -> (Expr, HashMap<String, Type>) {
-    let mut env = HashMap::new();
-    let mut alpha = HashMap::new();
+    extenv: &FnvHashMap<String, VarType>,
+) -> (Expr, FnvHashMap<String, Type>) {
+    let mut env = FnvHashMap::default();
+    let mut alpha = FnvHashMap::default();
     let (expr, _) = convert_expr(expr, &mut env, &mut alpha, extenv);
     for (name, t) in extenv.iter() {
         env.insert(format!("min_caml_{}", name.clone()), sanitize_bool(t.clone().to_type().unwrap()));
