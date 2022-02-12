@@ -1,4 +1,4 @@
-use std::{mem::swap, convert::TryInto, iter::Inspect, ops::Index};
+use std::{mem::swap, convert::TryInto};
 
 use fnv::{FnvHashSet, FnvHashMap};
 
@@ -105,10 +105,10 @@ fn update_prop(prop: &mut FnvHashSet<String>, ret: &String, instr: &RawInstr) {
             prop.insert(id_left.clone());
             prop.insert(id_right.clone());
         },
-        RawInstr::If { id_left, op, id_right, exp_then, exp_else } => {
+        RawInstr::If { id_left: _, op: _, id_right: _, exp_then: _, exp_else: _ } => {
             panic!("internal compiler error");
         },
-        RawInstr::IfZero { id, exp_then, exp_else } => {
+        RawInstr::IfZero { id: _, exp_then: _, exp_else: _ } => {
             panic!("internal compiler error");
         },
         RawInstr::CallCls { cls, args } => {
