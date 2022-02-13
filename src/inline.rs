@@ -42,7 +42,7 @@ fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut Fnv
             }
         },
         RawExpr::LetIn { id, exp_id, exp_suc } => {
-            let id_type = k_env.remove(&id).unwrap();
+            let id_type = k_env.get(&id).unwrap().clone();
             let new_id = generate_id(&id);
             k_env.insert(new_id.clone(), id_type);
             let exp_id = rename(*exp_id, name_map, k_env);
@@ -56,7 +56,7 @@ fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut Fnv
             }
         },
         RawExpr::LetRecIn { fun, args, exp_fun, exp_suc } => {
-            let fun_type = k_env.remove(&fun).unwrap();
+            let fun_type = k_env.get(&fun).unwrap().clone();
             let new_fun = generate_id(&fun);
             k_env.insert(new_fun.clone(), fun_type);
             let arg_types: Vec<_> = args.iter().map(|arg| k_env.remove(arg).unwrap()).collect();
@@ -159,7 +159,7 @@ fn expand(expr: Expr, k_env: &mut FnvHashMap<String, Type>, small_funs: &mut Fnv
                 original_args.iter().zip(args.iter()).for_each(|(arg, new_arg)| {
                     name_map.insert(arg.clone(), new_arg.clone());
                 });
-                rename(Spanned::new(RawExpr::Apply{fun, args}, expr.span), &mut name_map, k_env).item
+                rename(expr.clone(), &mut name_map, k_env).item
             }
             else {
                 RawExpr::Apply {fun, args}
