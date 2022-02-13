@@ -1,6 +1,6 @@
 use std::{fs::{self, File}, io::Write};
 
-use crate::{closurize, code, knormalize, parse, riscv, typing, inline};
+use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold};
 
 pub fn compile(filename: &String) {
     code::SOURCE_CODE
@@ -21,6 +21,8 @@ pub fn compile(filename: &String) {
     let (k_normalized, mut k_env) = knormalize::k_normalize(syntax_expr, &extenv);
 
     let k_normalized = inline::do_inline_expansion(k_normalized, &mut k_env);
+
+    let k_normalized = constfold::do_constant_folding(k_normalized);
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
     closurize::typecheck(&closurized, &k_env, &toplevels);

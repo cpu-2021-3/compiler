@@ -17,6 +17,7 @@ pub mod span;
 pub mod syntax;
 pub mod ty;
 pub mod typing;
+pub mod constfold;
 
 use std::env;
 
