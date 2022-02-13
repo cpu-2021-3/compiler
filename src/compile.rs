@@ -4,10 +4,12 @@ use fnv::FnvHashMap;
 
 use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold, eliminate, knormal, ty::Type};
 
+static OPTIMIZATION_LIMIT: u32 = 6;
+
 // K 正規化されたコードを、コードの長さが変化しなくなるまで最適化しつづける
 fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<String, Type>) -> (knormal::Expr, FnvHashMap<String, Type>) {
     let mut counter = 0;
-    loop {
+    for _ in 0..OPTIMIZATION_LIMIT {
         let len_1 = k_normalized.size();
         k_normalized = inline::do_inline_expansion(k_normalized, &mut k_env);
         let len_2 = k_normalized.size();
@@ -16,11 +18,14 @@ fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<Stri
         k_normalized = eliminate::eliminate_dead_code(k_normalized);
         let len_4 = k_normalized.size();
         counter += 1;
+        log::debug!("Optimization looped {counter} times (code size: {len_1}, {len_2}, {len_3}, {len_4})");
         if len_1 == len_2 && len_2 == len_3 && len_3 == len_4 {
-            log::debug!("Optimization looped {} times", counter);
+            log::debug!("Optimization finished!");
             return (k_normalized, k_env)
         }
     }
+    log::debug!("Optimization stopped.");
+    return (k_normalized, k_env)
 }
 
 pub fn compile(filename: &String) {

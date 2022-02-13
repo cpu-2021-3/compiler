@@ -2,7 +2,7 @@ use fnv::FnvHashMap;
 
 use crate::{knormal::{Expr, RawExpr}, ty::Type, span::Spanned, id::generate_id};
 
-static EXPAND_SIZE_LIMIT: u32 = 30;
+static EXPAND_SIZE_LIMIT: u32 = 100;
 
 // 式中に登場する変数 (束縛変数含む) の名前を新しく付け直す
 fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut FnvHashMap<String, Type>) -> Box<Expr> {
@@ -46,10 +46,10 @@ fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut Fnv
             let fun_type = k_env.get(&fun).unwrap().clone();
             let new_fun = generate_id(&fun);
             k_env.insert(new_fun.clone(), fun_type);
-            let arg_types: Vec<_> = args.iter().map(|arg| k_env.remove(arg).unwrap()).collect();
+            let arg_types: Vec<_> = args.iter().map(|arg| k_env.get(arg).unwrap().clone()).collect();
             let new_args: Vec<_> = args.iter().map(|arg| generate_id(arg)).collect();
             new_args.iter().zip(arg_types).for_each(|(arg, arg_type)| {
-                k_env.insert(arg.clone(), arg_type);
+                k_env.insert(arg.clone(), arg_type);    
             });
             name_map.insert(fun.clone(), new_fun.clone());
             let exp_suc = rename(*exp_suc, name_map, k_env);
