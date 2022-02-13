@@ -1,6 +1,27 @@
 use std::{fs::{self, File}, io::Write};
 
-use crate::{closurize, code, knormalize::{self, k_normalize}, parse, riscv, typing, inline, constfold, eliminate};
+use fnv::FnvHashMap;
+
+use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold, eliminate, knormal, ty::Type};
+
+// K 正規化されたコードを、コードの長さが変化しなくなるまで最適化しつづける
+fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<String, Type>) -> (knormal::Expr, FnvHashMap<String, Type>) {
+    let mut counter = 0;
+    loop {
+        let len_1 = k_normalized.size();
+        k_normalized = inline::do_inline_expansion(k_normalized, &mut k_env);
+        let len_2 = k_normalized.size();
+        k_normalized = constfold::do_constant_folding(k_normalized);
+        let len_3 = k_normalized.size();
+        k_normalized = eliminate::eliminate_dead_code(k_normalized);
+        let len_4 = k_normalized.size();
+        counter += 1;
+        if len_1 == len_2 && len_2 == len_3 && len_3 == len_4 {
+            log::debug!("Optimization looped {} times", counter);
+            return (k_normalized, k_env)
+        }
+    }
+}
 
 pub fn compile(filename: &String) {
     code::SOURCE_CODE
@@ -18,13 +39,9 @@ pub fn compile(filename: &String) {
         }
     };
 
-    let (k_normalized, mut k_env) = knormalize::k_normalize(syntax_expr, &extenv);
+    let (k_normalized, k_env) = knormalize::k_normalize(syntax_expr, &extenv);
 
-    let k_normalized = inline::do_inline_expansion(k_normalized, &mut k_env);
-
-    let k_normalized = constfold::do_constant_folding(k_normalized);
-
-    let k_normalized = eliminate::eliminate_dead_code(k_normalized);
+    let (k_normalized, mut k_env) = optimization_loop(k_normalized, k_env);
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
     closurize::typecheck(&closurized, &k_env, &toplevels);

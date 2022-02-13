@@ -4,19 +4,6 @@ use crate::{knormal::{Expr, RawExpr}, ty::Type, span::Spanned, id::generate_id};
 
 static EXPAND_SIZE_LIMIT: u32 = 30;
 
-impl Expr {
-    pub fn size(&self) -> u32 {
-        match &self.item {
-            RawExpr::If { id_left: _, op: _, id_right: _, exp_then: e1, exp_else: e2 } |
-            RawExpr::LetIn { id: _, exp_id: e1, exp_suc: e2 } |
-            RawExpr::LetRecIn { fun: _, args: _, exp_fun: e1, exp_suc: e2 } => {
-                e1.size() + e2.size() + 1
-            },
-            _ => 1
-        }
-    }
-}
-
 // 式中に登場する変数 (束縛変数含む) の名前を新しく付け直す
 fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut FnvHashMap<String, Type>) -> Box<Expr> {
     let raw_expr = match expr.item {

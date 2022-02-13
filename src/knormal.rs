@@ -130,6 +130,21 @@ impl fmt::Display for CondOp {
     }
 }
 
+
+impl Expr {
+    // 式の大きさ
+    pub fn size(&self) -> u32 {
+        match &self.item {
+            RawExpr::If { id_left: _, op: _, id_right: _, exp_then: e1, exp_else: e2 } |
+            RawExpr::LetIn { id: _, exp_id: e1, exp_suc: e2 } |
+            RawExpr::LetRecIn { fun: _, args: _, exp_fun: e1, exp_suc: e2 } => {
+                e1.size() + e2.size() + 1
+            },
+            _ => 1
+        }
+    }
+}
+
 impl RawExpr {
     // 式中に出現する自由変数の集合
     pub fn free_vars(&self) -> FnvHashSet<String> {
