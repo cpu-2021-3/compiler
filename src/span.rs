@@ -16,6 +16,7 @@ impl<T> Spanned<T> {
 
 use std::fmt;
 
+#[derive(Debug, Clone)]
 pub struct LineColumn {
     pub line: usize,
     pub column: usize,

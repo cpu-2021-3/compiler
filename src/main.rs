@@ -8,6 +8,7 @@ pub mod closurize;
 pub mod code;
 pub mod compile;
 pub mod id;
+pub mod inline;
 pub mod knormal;
 pub mod knormalize;
 pub mod parse;

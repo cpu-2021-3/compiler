@@ -567,12 +567,6 @@ pub fn do_register_allocation(functions: Vec<Function>) -> Vec<super::asm::Funct
         let graph = build_graph(&function.body);
         let color_list = map_register(graph, 50);
         let function = convert_function(function, &color_list);
-        let function = if function.tag == "min_caml_start" {
-            function 
-        }
-        else {
-            function.add_prologue_epilogue()
-        };
         res.push(function);
     }
     res

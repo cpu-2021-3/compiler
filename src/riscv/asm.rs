@@ -18,6 +18,21 @@ pub enum Register {
     S(usize), // 汎用レジスタ
 }
 
+impl Register {
+    // レジスタが関数の呼び出し前後で変化しないかどうか (callee-save かどうか)
+    pub fn is_stable(&self) -> bool {
+        match self {
+            Register::Zero |
+            Register::Ra |
+            Register::Sp |
+            Register::S(_) => true,
+            Register::Hp |
+            Register::X |
+            Register::A(_) => false,
+        }
+    }
+}
+
 impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -93,7 +108,7 @@ pub type Program = Vec<Spanned<Instruction>>;
 #[derive(Debug)]
 pub struct Function {
     pub tag: String,
-    program: Program
+    pub program: Program
 }
 
 impl Function {

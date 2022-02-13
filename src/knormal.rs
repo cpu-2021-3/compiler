@@ -3,7 +3,7 @@ use std::fmt;
 use crate::span::Spanned;
 
 /// K 正規化された構文木
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RawExpr {
     Unit,
     Int(i32),
