@@ -209,7 +209,7 @@ fn fold(expr: Expr, const_table: &mut FnvHashMap<String, Const>) -> Box<Expr> {
             let exp_id = fold(*exp_id, const_table);
             match const_of(&exp_id, const_table) {
                 Some(constant) => {
-                    log::info!("Added {id}: {constant} to constant table");
+                    //log::info!("Added {id}: {constant} to constant table");
                     const_table.insert(id.clone(), constant);
                 },
                 None => {},

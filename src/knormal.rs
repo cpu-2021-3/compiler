@@ -1,5 +1,9 @@
 use std::fmt;
 
+use fnv::FnvHashSet;
+
+use std::iter::FromIterator;
+
 use crate::span::Spanned;
 
 /// K 正規化された構文木
@@ -122,6 +126,68 @@ impl fmt::Display for CondOp {
         match self {
             CondOp::Eq => write!(f, "="),
             CondOp::LEq => write!(f, "<="),
+        }
+    }
+}
+
+impl RawExpr {
+    // 式中に出現する自由変数の集合
+    pub fn free_vars(&self) -> FnvHashSet<String> {
+        match self {
+            RawExpr::Unit |
+            RawExpr::Int(_) |
+            RawExpr::Float(_) |
+            RawExpr::ExtArray { array: _ } => {
+                FnvHashSet::default()
+            },
+            RawExpr::Var(id) |
+            RawExpr::UnOp { op: _, id } => {
+                FnvHashSet::from_iter(vec![id.clone()])
+            },
+            RawExpr::BiOp { id_left, op: _, id_right } => {
+                FnvHashSet::from_iter(vec![id_left.clone(), id_right.clone()])
+            },
+            RawExpr::If { id_left, op: _, id_right, exp_then, exp_else } => {
+                let mut free_vars = FnvHashSet::from_iter(vec![id_left.clone(), id_right.clone()]);
+                free_vars.extend(exp_then.item.free_vars());
+                free_vars.extend(exp_else.item.free_vars());
+                free_vars
+            },
+            RawExpr::LetIn { id, exp_id, exp_suc } => {
+                let mut free_vars = exp_suc.item.free_vars();
+                free_vars.remove(id);
+                free_vars.extend(exp_id.item.free_vars());
+                free_vars
+            },
+            RawExpr::LetRecIn { fun, args, exp_fun, exp_suc } => {
+                let mut free_vars = exp_fun.item.free_vars();
+                args.iter().for_each(|arg| {
+                    free_vars.remove(arg);
+                });
+                free_vars.extend(exp_suc.item.free_vars());
+                free_vars.remove(fun);
+                free_vars
+            },
+            RawExpr::Apply { fun, args } => {
+                let mut free_vars = FnvHashSet::from_iter(args.clone().into_iter());
+                free_vars.insert(fun.clone());
+                free_vars
+            },
+            RawExpr::NewTuple(elms) => {
+                FnvHashSet::from_iter(elms.clone().into_iter())
+            },
+            RawExpr::TupleGet { tuple, index: _ } => {
+                FnvHashSet::from_iter(vec![tuple.clone()])
+            },
+            RawExpr::ArrayGet { array, index } => {
+                FnvHashSet::from_iter(vec![array.clone(), index.clone()])
+            },
+            RawExpr::ArrayPut { array, index, value } => {
+                FnvHashSet::from_iter(vec![array.clone(), index.clone(), value.clone()])
+            },
+            RawExpr::ExtApply { fun: _, args } => {
+                FnvHashSet::from_iter(args.clone().into_iter())
+            },
         }
     }
 }
