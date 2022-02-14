@@ -19,6 +19,7 @@ pub mod ty;
 pub mod typing;
 pub mod constfold;
 pub mod eliminate;
+pub mod reduce;
 
 use std::env;
 

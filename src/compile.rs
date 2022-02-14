@@ -2,7 +2,7 @@ use std::{fs::{self, File}, io::Write};
 
 use fnv::FnvHashMap;
 
-use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold, eliminate, knormal, ty::Type};
+use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold, eliminate, knormal, ty::Type, reduce};
 
 static OPTIMIZATION_LIMIT: u32 = 1000;
 
@@ -10,6 +10,8 @@ static OPTIMIZATION_LIMIT: u32 = 1000;
 fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<String, Type>) -> (knormal::Expr, FnvHashMap<String, Type>) {
     let mut counter = 0;
     for _ in 0..OPTIMIZATION_LIMIT {
+        let len_0 = k_normalized.size();
+        k_normalized = reduce::do_beta_reduction(k_normalized);
         let len_1 = k_normalized.size();
         k_normalized = inline::do_inline_expansion(k_normalized, &mut k_env);
         let len_2 = k_normalized.size();
@@ -18,8 +20,8 @@ fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<Stri
         k_normalized = eliminate::eliminate_dead_code(k_normalized);
         let len_4 = k_normalized.size();
         counter += 1;
-        log::debug!("Optimization looped {counter} times (code size: {len_1}, {len_2}, {len_3}, {len_4})");
-        if len_1 == len_2 && len_2 == len_3 && len_3 == len_4 {
+        log::debug!("Optimization looped {counter} times (code size: {len_0}, {len_1}, {len_2}, {len_3}, {len_4})");
+        if len_0 == len_1 && len_1 == len_2 && len_2 == len_3 && len_3 == len_4 {
             log::debug!("Optimization finished!");
             return (k_normalized, k_env)
         }
