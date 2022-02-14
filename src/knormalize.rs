@@ -571,16 +571,16 @@ fn convert_expr(
         }
         syntax::RawExpr::Var(id) => {
             if let Some(renamed_ids) = alpha.get(&id) {
-                let renamed_id = renamed_ids.last().unwrap();
-                let var_type = env.get(renamed_id).unwrap().clone();
-                (wrap(RawExpr::Var(renamed_id.clone())), var_type)
-            } else {
-                let var_type = extenv.get(&id).unwrap().clone();
-                (
-                    wrap(RawExpr::ExtArray { array: id }),
-                    sanitize_bool(var_type.to_type().unwrap()),
-                )
-            }
+                if let Some(renamed_id) = renamed_ids.last() {
+                    let var_type = env.get(renamed_id).unwrap().clone();
+                    return (wrap(RawExpr::Var(renamed_id.clone())), var_type);
+                }
+            } 
+            let var_type = extenv.get(&id).unwrap().clone();
+            (
+                wrap(RawExpr::ExtArray { array: id }),
+                sanitize_bool(var_type.to_type().unwrap()),
+            )
         }
     }
 }

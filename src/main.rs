@@ -33,7 +33,11 @@ fn main() {
         panic!("command line argument error");
     }
 
+    let is_globals = args.len() >= 3 && args[2] == "-g";
+
+    let is_main = args.len() >= 3 && args[2] == "-m";
+
     let filename = &args[1];
 
-    compile::compile(filename);
+    compile::compile(filename, is_globals, is_main);
 }

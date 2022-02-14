@@ -30,7 +30,7 @@ fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<Stri
     return (k_normalized, k_env)
 }
 
-pub fn compile(filename: &String) {
+pub fn compile(filename: &String, is_globals: bool, is_main: bool) {
     code::SOURCE_CODE
         .set(fs::read_to_string(filename).unwrap())
         .unwrap();
@@ -51,30 +51,19 @@ pub fn compile(filename: &String) {
     let (k_normalized, mut k_env) = optimization_loop(k_normalized, k_env);
 
     let (closurized, toplevels) = closurize::closurize(k_normalized, &k_env);
-    closurize::typecheck(&closurized, &k_env, &toplevels);
+    //closurize::typecheck(&closurized, &k_env, &toplevels);
 
-    let functions = riscv::specify::specify(closurized, toplevels, &mut k_env);
+    let functions = riscv::specify::specify(closurized, toplevels, &mut k_env, is_globals, is_main);
     let functions = riscv::embed::embed(functions);
 
     let functions = riscv::regalloc::do_register_allocation(functions);
 
     let functions: Vec<_> = functions.into_iter().map(|function| function.coalesce()).collect();
     
-    let mut f = File::create("output_before_elim.s").expect("Failed to open output file");
-
-    for function in &functions {
-        f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
-    }
     let functions: Vec<_> = functions.into_iter().map(|function| function.remove_dead_code()).collect();
 
-    let mut f = File::create("output_after_elim.s").expect("Failed to open output file");
-
-    for function in &functions {
-        f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
-    }
-
     let functions: Vec<_> = functions.into_iter().map(|function|
-    if function.tag == "min_caml_start" {
+    if function.tag == "min_caml_start" && !is_globals {
         function 
     }
     else {
@@ -84,6 +73,18 @@ pub fn compile(filename: &String) {
     let mut f = File::create("output.s").expect("Failed to open output file");
 
     for function in &functions {
-        f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
+        if is_main {
+            f.write_all(format!("{:+}", function).as_bytes()).expect("Failed to write into output file");
+        }
+        else {
+            f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
+        }
+    }
+
+    if is_globals {
+        f.write_all(format!(".data\n").as_bytes()).expect("Failed to write into output file");
+        for (ext_name, _) in extenv {
+            f.write_all(format!("{ext_name}:\n\t.float 0\n").as_bytes()).expect("Failed to write into output file");
+        }
     }
 }

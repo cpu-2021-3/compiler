@@ -229,7 +229,10 @@ impl fmt::Display for Function {
                     }
                 },
                 Instruction::LoadTag { rd, tag } => {
-                    write!(f, "\tla {rd}, {tag}")?
+                    write!(f, "\tla {rd}, {tag}")?;
+                    if f.sign_plus() {
+                        write!(f, "\n\tlw {rd}, 0({rd})")?
+                    }
                 },
                 Instruction::Load { rd, imm, rs1 } => {
                     write!(f, "\tlw {rd}, {imm}({rs1})")?

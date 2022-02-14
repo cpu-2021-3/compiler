@@ -262,7 +262,10 @@ pub fn specify(
     expr: closure::Expr,
     toplevels: Vec<closure::Function>,
     env: &mut FnvHashMap<String, Type>,
+    is_globals: bool,
+    is_main: bool
 ) -> Vec<Function> {
+    // すべての関数を変換
     let mut functions: Vec<Function> = vec![];
     toplevels.into_iter().for_each(|toplevel| {
         functions.push(Function {
@@ -272,11 +275,30 @@ pub fn specify(
             body: convert_expr(toplevel.body, env),
         });
     });
+    // エントリーポイントも関数化
+    let entry_tag = if is_globals {"global_init".to_string()} else {"min_caml_start".to_string()};
+    let entry_body = convert_expr(expr, env);
+    let entry_body = if is_main {
+        let unit_id = generate_id("un");
+        Spanned::new(RawExpr::LetIn {
+            id: unit_id.clone(),
+            instr_id: Spanned::new(RawInstr::Unit, (0, 0)),
+            instr_suc: 
+            Box::new(Spanned::new(RawExpr::LetIn { 
+                id: generate_id("gl"), 
+                instr_id: Spanned::new(RawInstr::CallDir{ tag: "global_init".to_string(), args: vec![unit_id] }, (0, 0)), 
+                instr_suc: Box::new(entry_body) 
+            }, (0,0)))
+        }, (0, 0))
+    }
+    else {
+        entry_body
+    };
     functions.push(Function {
-        tag: "min_caml_start".to_string(),
+        tag: entry_tag,
         args: vec![],
         free_vars: vec![],
-        body: convert_expr(expr, env),
+        body: entry_body,
     });
     functions
 }
