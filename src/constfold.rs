@@ -33,7 +33,7 @@ impl Const {
         match self {
             Const::Int(i) => Some(RawExpr::Int(*i)),
             Const::Float(f) => Some(RawExpr::Float(*f)),
-            Const::Tuple(e) => None,
+            Const::Tuple(_) => None,
         }
     }
 }

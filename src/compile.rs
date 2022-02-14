@@ -4,7 +4,7 @@ use fnv::FnvHashMap;
 
 use crate::{closurize, code, knormalize, parse, riscv, typing, inline, constfold, eliminate, knormal, ty::Type};
 
-static OPTIMIZATION_LIMIT: u32 = 6;
+static OPTIMIZATION_LIMIT: u32 = 1000;
 
 // K 正規化されたコードを、コードの長さが変化しなくなるまで最適化しつづける
 fn optimization_loop(mut k_normalized: knormal::Expr, mut k_env: FnvHashMap<String, Type>) -> (knormal::Expr, FnvHashMap<String, Type>) {
