@@ -46,7 +46,7 @@ fn eliminate(expr: Expr) -> Box<Expr> {
         RawExpr::LetRecIn { fun, args, exp_fun, exp_suc } => {
             let exp_suc = eliminate(*exp_suc);
             if !exp_suc.item.free_vars().contains(&fun) {
-                log::info!("Elimination function {fun}");
+                log::info!("Eliminating function {fun}");
                 exp_suc.item
             }
             else {
