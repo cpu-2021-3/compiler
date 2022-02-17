@@ -1,6 +1,6 @@
 use fnv::{FnvHashSet, FnvHashMap};
 
-use crate::{riscv::asm::{Instruction, Register}, span::Spanned};
+use crate::{riscv::asm::{Instruction, Register, ROp, IOp}, span::Spanned};
 
 use super::asm::{Function, Program};
 
@@ -346,6 +346,153 @@ impl Function {
             new_program.push(instruction);
         }
 
+        Self::new(self.tag, new_program)
+    }
+
+    pub fn do_constant_folding(self) -> Self {
+        let program = self.program;
+        let program_len = program.len();
+        let (prev_exists, mut prev_of_tags) = flow_of_program(&program);
+        
+        let mut const_lists = vec![FnvHashMap::<Register, i32>::default(); program_len];
+        let mut new_program = vec![];
+
+        // 表から callee-save ではないレジスタの情報を取り除く
+        fn remove_tmps_from_list (const_list: &FnvHashMap<Register, i32>) -> FnvHashMap<Register, i32> {
+            const_list.clone().into_iter().filter(|(reg, _)| {
+                reg.is_stable()
+            }).collect()
+        }
+        for (index, instruction) in program.into_iter().enumerate() {
+            // 前の命令が存在する場合
+            if prev_exists[index] {
+                // 定数表を持ってくる
+                const_lists[index] = const_lists[index - 1].clone();
+            }
+            let new_instruction = match instruction.item {
+                Instruction::Tag(tag) => {
+                    // このタグの直前の命令を計算
+                    let prevs = prev_of_tags.entry(tag.clone()).or_insert(FnvHashSet::default());
+                    if prev_exists[index] {
+                        prevs.insert(index - 1);
+                    }
+                    // 直前の命令集合が空でなければ
+                    if let Some(first_prev) = prevs.iter().next() {
+                        let mut new_list = FnvHashMap::default();
+                        // 置き換え表を計算
+                        for (k, v) in const_lists.get(*first_prev).unwrap() {
+                            new_list.insert(k.clone(), v.clone());
+                        }
+                        for prev in prevs.iter() {
+                            let mut remove_keys = vec![];
+                            for (k, v1) in new_list.iter() {
+                                if let Some(v2) = const_lists.get(*prev).unwrap().get(k) {
+                                    if v1 != v2 {
+                                        remove_keys.push(k.clone());
+                                    }
+                                }
+                                else {
+                                    remove_keys.push(k.clone());
+                                }
+                            }
+                            for remove_key in remove_keys {
+                                new_list.remove(&remove_key);
+                            }
+                        }
+                        const_lists[index] = new_list;
+                    } 
+                    Instruction::Tag(tag)
+                },
+                Instruction::SetImm { rd, imm } => {
+                    const_lists[index].insert(rd, imm);
+                    Instruction::SetImm {rd, imm}
+                },
+                Instruction::Move { rd, rs } => {
+                    if let Some(imm) = const_lists[index].get(&rs).cloned() {
+                        const_lists[index].insert(rd, imm);
+                    }
+                    else {
+                        const_lists[index].remove(&rd);
+                    }
+                    Instruction::Move {rd, rs}
+                },
+                Instruction::ROp { rd, op, rs1, rs2 } => {
+                    let mut rd_imm = None;
+                    if let Some(imm1) = const_lists[index].get(&rs1).cloned() {
+                        if let Some(imm2) = const_lists[index].get(&rs2).cloned() {
+                            let imm = match op {
+                                ROp::Add => Some(imm1 + imm2),
+                                ROp::Sub => Some(imm1 - imm2),
+                                ROp::Mul => Some(imm1 * imm2),
+                                ROp::Div => Some(imm1 / imm2),
+                                ROp::LShift => Some(imm1 << imm2),
+                                ROp::RShift => Some(imm1 >> imm2),
+                                _ => {None}
+                            };
+                            if let Some(imm) = imm {
+                                const_lists[index].insert(rd, imm);
+                                rd_imm = Some(imm);
+                            }
+                        }
+                    }
+                    match rd_imm {
+                        Some(imm) => Instruction::SetImm { rd, imm },
+                        None => {
+                            const_lists[index].remove(&rd);
+                            Instruction::ROp {rd, op, rs1, rs2}
+                        }
+                    }
+                },
+                Instruction::IOp { rd, op, rs1, imm: imm2 } => {
+                    let mut rd_imm = None;
+                    if let Some(imm1) = const_lists[index].get(&rs1).cloned() {
+                        let imm = match op {
+                            IOp::Add => imm1 + imm2,
+                            IOp::LShift => imm1 << imm2,
+                            IOp::RShift => imm1 >> imm2,
+                        };
+                        const_lists[index].insert(rd, imm);
+                        rd_imm = Some(imm);
+                    }
+                    match rd_imm {
+                        Some(imm) => Instruction::SetImm { rd, imm },
+                        None => {
+                            const_lists[index].remove(&rd);
+                            Instruction::IOp {rd, op, rs1, imm: imm2}
+                        }
+                    }
+                },
+                Instruction::Branch { op, rs1, rs2, tag } => {
+                    Instruction::Branch {op, rs1, rs2, tag}
+                },
+                Instruction::Jump { tag } => {
+                    Instruction::Jump {tag}
+                },
+                Instruction::Call(reg, is_tail) => {
+                    const_lists[index] = remove_tmps_from_list(&const_lists[index]);
+                    Instruction::Call(reg, is_tail)
+                },
+                Instruction::CallTag(tag, is_tail) => {
+                    const_lists[index] = remove_tmps_from_list(&const_lists[index]);
+                    Instruction::CallTag(tag, is_tail)
+                },
+                Instruction::LoadTag { rd, tag } => {
+                    const_lists[index].remove(&rd);
+                    Instruction::LoadTag {rd, tag}
+                },
+                Instruction::Load { rd, imm, rs1 } => {
+                    const_lists[index].remove(&rd);
+                    Instruction::Load {rd, imm, rs1}
+                },
+                Instruction::Store { rs2, imm, rs1 } => {
+                    Instruction::Store {rs2, imm, rs1}
+                },
+                Instruction::Return => {
+                    Instruction::Return
+                },
+            };
+            new_program.push(Spanned::new(new_instruction, instruction.span));
+        }
         Self::new(self.tag, new_program)
     }
 }

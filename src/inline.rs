@@ -2,7 +2,7 @@ use fnv::FnvHashMap;
 
 use crate::{knormal::{Expr, RawExpr}, ty::Type, span::Spanned, id::generate_id};
 
-static EXPAND_SIZE_LIMIT: u32 = 100;
+static EXPAND_SIZE_LIMIT: u32 = 120;
 
 // 式中に登場する変数 (束縛変数含む) の名前を新しく付け直す
 fn rename(expr: Expr, name_map: &mut FnvHashMap<String, String>, k_env: &mut FnvHashMap<String, Type>) -> Box<Expr> {

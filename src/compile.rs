@@ -65,7 +65,7 @@ pub fn compile(filename: &String) {
     for function in &functions {
         f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
     }
-    let functions: Vec<_> = functions.into_iter().map(|function| function.remove_dead_code()).collect();
+    let functions: Vec<_> = functions.into_iter().map(|function| function.do_constant_folding()).collect();
 
     let mut f = File::create("output_after_elim.s").expect("Failed to open output file");
 
@@ -73,6 +73,7 @@ pub fn compile(filename: &String) {
         f.write_all(format!("{}", function).as_bytes()).expect("Failed to write into output file");
     }
 
+    let functions: Vec<_> = functions.into_iter().map(|function| function.remove_dead_code()).collect();
     let functions: Vec<_> = functions.into_iter().map(|function|
     if function.tag == "min_caml_start" {
         function 
